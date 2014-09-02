@@ -1704,8 +1704,6 @@ asmclobberlst:
 | asmclobberlst_ne                       { $1 }
 ;
 asmclobberlst_ne:
-   one_string_constant                           { [$1] }
-|  one_string_constant COMMA asmclobberlst_ne    { $1 :: $3 }
+   string_constant                           { [fst $1] }
+|  string_constant COMMA asmclobberlst_ne    { fst $1 :: $3 }
 ;
-
-%%
