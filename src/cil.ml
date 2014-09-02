@@ -1453,9 +1453,9 @@ let attributeHash: (string, attributeClass) H.t =
     [ "thread"; "naked"; "dllimport"; "dllexport";
       "selectany"; "nothrow"; "property";  "noreturn"; "align" ];
 
-  List.iter (fun a -> H.add table a AttrFunType)
-    [ "format"; "regparm"; "longcall";
-      "noinline"; "always_inline"; "gnu_inline"; "leaf";
+  List.iter (fun a -> H.add table a (AttrFunType false))
+    [ "format"; "regparm"; "longcall"; 
+      "noinline"; "always_inline"; "gnu_inline"; "leaf"; "cold"; "alloc_size";
       "artificial"; "warn_unused_result"; "nonnull";
     ];
 
