@@ -1760,6 +1760,7 @@ let cabsTypeAddAttributes a0 t =
 			    "byte" -> 1
 			  | "word" -> !Machdep.theMachine.Machdep.sizeof_int
 			  | "pointer" -> !Machdep.theMachine.Machdep.sizeof_ptr
+			  | "unwind_word" -> !Machdep.theMachine.Machdep.sizeof_ptr (* FIXME: always ptrsized? *)
 			  | "QI" -> 1
 			  | "HI" -> 2
 			  | "SI" -> 4
