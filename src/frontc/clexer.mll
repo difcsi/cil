@@ -204,6 +204,7 @@ let init_lexicon _ =
       ("restrict", fun loc -> RESTRICT loc);
       ("__auto_type", fun loc -> AUTOTYPE loc);
 (*      ("__extension__", EXTENSION); *)
+      ("__int128", fun _ -> INT128 (currentLoc ()));
       (**** MS VC ***)
       ("__int32", fun loc -> INT loc);
       ("__int64", fun _ -> INT64 (currentLoc ()));
