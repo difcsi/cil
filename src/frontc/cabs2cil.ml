@@ -2994,6 +2994,7 @@ and makeVarInfoCabs
   vi.vstorage <- sto;
   vi.vattr <- nattr;
   vi.vdecl <- ldecl;
+  vi.vinline <- inline;
 
   if false then
     ignore (E.log "Created varinfo %s : %a\n" vi.vname d_type vi.vtype);
