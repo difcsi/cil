@@ -760,6 +760,10 @@ addTest("testc11/clang-c11-generic-2");
 addTest("testc11/alignas");
 addTest("testc11/alignas_proper");
 
+addTest("testrun/inline-srk-gnu89 $gcc");
+addTest("testrun/inline-srk-c11 $gcc");
+addTest("testrun/inline-srk-c11+oldinline $gcc");
+
 # ---------------- c-torture -------------
 ## if we have the c-torture tests add them
 ## But only if the ctorture group was specfied
