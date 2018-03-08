@@ -2057,10 +2057,11 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
 
 let extInlineSuffRe = Str.regexp "\\(.+\\)__extinline"
 
-(* Create and cache varinfo's for globals. Starts with a varinfo but if the
-   global has been declared already it might come back with another varinfo.
-   Returns the varinfo to use (might be the old one), and an indication
-   whether the variable exists already in the environment *)
+(* Create and cache varinfo's for globals. Starts with a fresh varinfo 
+ * created by the caller, but if the  global has been declared already
+ * this will return the older, pre-existing varinfo, after merging.
+ * Returns the varinfo to use (might be the old one), and an indication 
+ * whether the variable exists already in the environment *)
 let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
   let debug = false in
   if not !cacheGlobals then vi, false else
@@ -2090,76 +2091,101 @@ let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
       ignore (E.log "  %s already in the env at loc %a\n"
                 vi.vname d_loc oldloc);
 
-    (* New-style extern inline handling: the real definition replaces the extern
-       inline one.  *)
+    (* New-style extern inline handling: if we already had an extern inline definition,
+     * and now we see a new definition, the new one replaces the old one, which simply
+     * becomes a GVarDecl (which we also add to the varinfo's vvardecls list -- FIXME,
+     * I think this is redundant since we also make one when adding a new varinfo, below). *)
     if (not !Cil.oldstyleExternInline) && oldvi.vstorage = Extern && oldvi.vinline && isadef then begin
       H.remove alreadyDefined oldvi.vname;
       theFile := Util.list_map (fun g -> match g with
-	   | GFun (fi, l) when fi.svar == oldvi -> GVarDecl(fi.svar, l)
-	   | x -> x) !theFile
+       | GFun (fi, l) when fi.svar == oldvi ->
+            let newvardecl = GVarDecl(fi.svar, l)
+            in
+            (* turn GFun into GVarDecl; svar unchanged *)
+            (* fi.svar.vvardecls <- (newvardecl, fi.svar.vstorage, fi.svar.vinline) :: fi.svar.vvardecls; *)
+            newvardecl
+       | x -> x) !theFile
     end;
-    (* It was already defined. We must reuse the varinfo. But clean up the
-       storage.  *)
-    let newstorage = (* See 6.2.2 *)
-      match oldvi.vstorage, vi.vstorage with
-        (* Extern and something else is that thing. FIXME: WHY? That's not
-         * what 6.2.2 says.
-         * For "extern inline", it's essential that we remember when we've
-         * seen Extern, since its presence on *any* prototype has a crucial
-         * effect on linking semantics. See 6.7.4 of the C11 spec.
-         * The same effect takes place if we see "nostorage" when "inline"
-         * is *not* specified, so we have to look out for that too. *)
-      | Extern, other
-      | other, Extern -> if (oldvi.vinline || vi.vinline) then Extern else other
-      | NoStorage, NoStorage ->
-                let protoIsInline = (isadef && oldvi.vinline) || ((not isadef) && vi.vinline) in
-                let otherIsInline = (isadef && vi.vinline) || ((not isadef) && oldvi.vinline) in
-                if protoIsInline && not otherIsInline then Extern else NoStorage
-      | NoStorage, other
-      | other, NoStorage -> if (oldvi.vinline || vi.vinline) then Extern else other
-      | _ ->
-	  if vi.vstorage != oldvi.vstorage then
-            ignore (warn
-		      "Inconsistent storage specification for %s. Previous declaration: %a"
-		      vi.vname d_loc oldloc);
-          vi.vstorage
-    in
-    oldvi.vinline <- oldvi.vinline || vi.vinline;
-    oldvi.vstorage <- newstorage;
-    (* If the new declaration has a section attribute, remove any
-       preexisting section attribute. This mimics behavior of gcc that is
-       required to compile the Linux kernel properly. *)
-    if hasAttribute "section" vi.vattr then
-      oldvi.vattr <- dropAttribute "section" oldvi.vattr;
-    (* Union the attributes *)
-    oldvi.vattr <- cabsAddAttributes oldvi.vattr vi.vattr;
-    begin
-      try
-        oldvi.vtype <-
-           combineTypes
-             (if isadef then CombineFundef else CombineOther)
-             oldvi.vtype vi.vtype;
-      with Failure reason ->
-        ignore (E.log "old type = %a\n" d_plaintype oldvi.vtype);
-        ignore (E.log "new type = %a\n" d_plaintype vi.vtype);
-        E.s (error "Declaration of %s does not match previous declaration from %a (%s)."
-               vi.vname d_loc oldloc reason)
-    end;
-
-    (* Found an old one. Keep the location always from the definition *)
-    if isadef then begin
-      oldvi.vdecl <- vi.vdecl;
-    end;
+    (* Otherwise we are merging either a new GVarDecl with an old def,
+     * or a new def with an old GVarDecl.
+     * First, snapshot the incoming declaration -- whether or not it's
+     * also a definition -- as a GVarDecl. FIXME: why not just as whatever it really is?  *)
+    oldvi.vvardecls <- (let glob = if isadef then (GVarDecl(oldvi, vi.vdecl)) else (GVarDecl(oldvi, vi.vdecl))
+        in (glob, vi.vstorage, vi.vinline) :: oldvi.vvardecls);
+    oldvi.vtype <- (try combineTypes
+            (if isadef then CombineFundef else CombineOther) oldvi.vtype vi.vtype
+          with Failure reason ->
+          ( ignore (E.log "old type = %a\n" d_plaintype oldvi.vtype);
+            ignore (E.log "new type = %a\n" d_plaintype vi.vtype);
+            E.s (error "Declaration of %s does not match previous declaration from %a (%s)."
+                   vi.vname d_loc oldloc reason)
+          ));
+    oldvi.vattr <-  (* If the new declaration has a section attribute, remove any
+                     * preexisting section attribute. This mimics behavior of gcc that is
+                     * required to compile the Linux kernel properly. *)
+                (let oldAttrsMaybeWithoutSection =
+                        if hasAttribute "section" vi.vattr
+                        then dropAttribute "section" oldvi.vattr
+                        else oldvi.vattr
+                in
+                cabsAddAttributes oldAttrsMaybeWithoutSection vi.vattr
+                );
+    oldvi.vstorage <- begin match oldvi.vstorage, vi.vstorage with
+            (* Extern and something else is that thing. FIXME: WHY? That's not
+             * what 6.2.2 says.
+             * For "extern inline", it's essential that we remember when we've
+             * seen Extern, since its presence on *any* prototype has a crucial
+             * effect on linking semantics. See 6.7.4 of the C11 spec.
+             * The same effect takes place if we see "nostorage" when "inline"
+             * is *not* specified, so we have to look out for that too. *)
+          | Extern, other
+          | other, Extern ->
+                (* If we're inline, preserve externness because it affects semantics. *)
+                if (oldvi.vinline || vi.vinline) then Extern else other
+          | NoStorage, NoStorage ->
+                    (*let protoIsInline = (isadef && oldvi.vinline) || ((not isadef) && vi.vinline) in
+                    let otherIsInline = (isadef && vi.vinline) || ((not isadef) && oldvi.vinline) in
+                    if (not !Cil.oldstyleExternInline && protoIsInline && not otherIsInline) then
+                        Extern else*) NoStorage
+          | NoStorage, other (* 'other' is not Extern here *)
+          | other, NoStorage -> (*if (not !Cil.oldstyleExternInline && (oldvi.vinline || vi.vinline))
+            then Extern else*) other
+          | _ -> ((if vi.vstorage != oldvi.vstorage then
+                    ignore (warn
+                      "Inconsistent storage specification for %s. Previous declaration: %a"
+                      vi.vname d_loc oldloc)
+                 );
+                 vi.vstorage
+                 )
+        end;
+    oldvi.vinline <-
+        (* If we're dealing with a non-inline definition of a function previously seen
+         * as inline (probably just prototyped, but maybe even defined if it's extern
+         * inline), we *must* preserve that non-inlineness into the varinfo. We will
+         * still emit an inline prototype because we use vvardecls to remember all
+         * (inline, storage) pairs seen across all prototypes in the file. *)
+        if isadef then vi.vinline else (oldvi.vinline || vi.vinline);
+    oldvi.vdecl <-  if isadef then vi.vdecl else oldvi.vdecl;
     oldvi, true
 
   with Not_found -> begin (* A new one.  *)
     if debug then
       ignore (E.log "  %s not in the env already\n" vi.vname);
-    (* Announce the name to the alpha conversion table. This will not
-       actually change the name of the vi. See the definition of
-       alphaConvertVarAndAddToEnv *)
-    alphaConvertVarAndAddToEnv true vi, false
-  end
+    (* Announce the name to the alpha conversion table. This will not 
+     * actually change the name of the vi. See the definition of 
+     * alphaConvertVarAndAddToEnv *)
+    let newlyAdded = alphaConvertVarAndAddToEnv true vi in
+    (
+        (if not isadef then
+         newlyAdded.vvardecls <-
+            let glob = if isadef then GVarDecl(vi, vi.vdecl)
+                else GVarDecl(vi, vi.vdecl)
+            in
+            (glob, vi.vstorage, vi.vinline) :: newlyAdded.vvardecls
+        );
+    newlyAdded, false
+    )
+  end 
 
 let conditionalConversion (t2: typ) (t3: typ) (e2: exp option) (e3:exp) : typ =
   let tresult =  (* ISO 6.5.15 *)
@@ -3085,9 +3111,12 @@ and makeVarInfoCabs
   (* makeVarinfo removes "const" even for formals, please respect my choices! *)
   vi.vtype <- t;
   vi.vstorage <- sto;
+  (* vi.vextinfo <- ExtConsistent; *)
+  vi.vvardecls <- [];
   vi.vattr <- nattr;
   vi.vdecl <- ldecl;
   vi.vinline <- inline;
+  (* vi.vinlinfo <- InlConsistent; *)
 
   if false then
     ignore (E.log "Created varinfo %s : %a\n" vi.vname d_type vi.vtype);
@@ -6041,14 +6070,6 @@ and createGlobal (specs : (typ * storage * bool * A.attribute list))
       (* sm: if it's a function prototype, and the storage class *)
       (* isn't specified, make it 'extern'; this fixes a problem *)
       (* with no-storage prototype and static definition.        *)
-      (* should only apply to non-inline functions,    *)
-      (* since "extern" means something different from <nothing> *)
-      (* in that case.                                           *)
-      if vi.vstorage = NoStorage
-        && not vi.vinline (* works now that makeVarInfoCabs sets vinline *)
-        && (let (_, _, inl, _) = specs in not inl) then
-        (*(trace "sm" (dprintf "adding extern to prototype of %s\n" n));*)
-        vi.vstorage <- Extern;
     end;
     let vi, alreadyInEnv = makeGlobalVarinfo (inite != A.NO_INIT) vi in
 (*
@@ -6094,14 +6115,14 @@ and createGlobal (specs : (typ * storage * bool * A.attribute list))
            So we allow "extern" + "initializer" if "const" is
            around. *)
         (* sm: As I read the ISO spec, in particular 6.9.2 and 6.7.8,
-           "extern int foo = 3" is exactly equivalent to "int foo = 3";
-           that is, if you put an initializer, then it is a definition,
-           and "extern" is redundantly giving the name external linkage.
-           gcc emits a warning, I guess because it is contrary to
-           usual practice, but I think CIL warnings should be about
-           semantic rather than stylistic issues, so I see no reason to
-           even emit a warning. *)
-        if vi.vstorage = Extern then
+         * "extern int foo = 3" is exactly equivalent to "int foo = 3";
+         * that is, if you put an initializer, then it is a definition,
+         * and "extern" is redundantly giving the name external linkage.
+         * gcc emits a warning, I guess because it is contrary to
+         * usual practice, but I think CIL warnings should be about
+         * semantic rather than stylistic issues, so I see no reason to
+         * even emit a warning. *)
+        if vi.vstorage = Extern && not vi.vinline then
           vi.vstorage <- NoStorage;     (* equivalent and canonical *)
 
         H.add alreadyDefined vi.vname !currentLoc;
@@ -6115,8 +6136,13 @@ and createGlobal (specs : (typ * storage * bool * A.attribute list))
           begin
             IH.add mustTurnIntoDef vi.vid true
           end;
-        if not alreadyInEnv then begin (* Only one declaration *)
-          (* If it has function type it is a prototype *)
+        if not alreadyInEnv then begin (* Create only one global for the declaration *)
+          (* If it has function type it is a prototype. FIXME: how do we know it's not GFun? *)
+          (* FIXME: no need to update vvardecls because makeVarinfoCabs (called at top of this fun)
+           * does this. *)
+          (* if isFunctionType vi.vtype then
+                vi.vvardecls <- (GVarDecl (vi, !currentLoc), vi.vstorage, vi.vinline) :: vi.vvardecls
+          else ();*)
           cabsPushGlobal (GVarDecl (vi, !currentLoc));
           vi
         end else begin
