@@ -273,6 +273,9 @@ sub collectOneArgument {
     if($arg eq "--bytecode") {
         $self->{NATIVECAML} = 0; return 1;
     }
+    if($arg eq "--native") {
+        $self->{NATIVECAML} = 1; return 1;
+    }
     if($arg eq "--no-idashdot") {
         $self->{IDASHDOT} = 0; return 1;
     }
