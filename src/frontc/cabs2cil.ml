@@ -1471,6 +1471,7 @@ let rec integralPromotion (t : typ) : typ = (* c.f. ISO 6.3.1.1 *)
 let defaultArgumentPromotion (t : typ) : typ = (* c.f. ISO 6.5.2.2:6 *)
   match unrollType t with
   | TFloat (FFloat, a) -> TFloat (FDouble, a)
+  | TFloat (FComplexFloat, a) -> TFloat (FComplexDouble, a) (* *)
   | _ -> if isIntegralType t then integralPromotion t else t
 
 let arithmeticConversion    (* c.f. ISO 6.3.1.8 *)

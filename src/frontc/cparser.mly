@@ -1092,6 +1092,7 @@ type_spec:   /* ISO 6.7.2 */
     VOID            { Tvoid, $1}
 |   CHAR            { Tchar, $1 }
 |   BOOL            { Tbool, $1 }
+|   COMPLEX         { Tcomplex, $1 }
 |   SHORT           { Tshort, $1 }
 |   INT             { Tint, $1 }
 |   LONG            { Tlong, $1 }

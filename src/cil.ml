@@ -1312,6 +1312,9 @@ let ulongLongPtrType = TPtr(ulongLongType, [])
 let boolPtrType = TPtr(boolType, [])
 
 let doubleType = TFloat(FDouble, [])
+let complexFlotaType = TFloat(FComplexFloat, [])
+let complexDoubleType = TFloat(FComplexDouble, [])
+let complexLongDoubleType = TFloat(FComplexLongDouble, [])
 
 
 (* An integer type that fits pointers. Initialized by initCIL *)
@@ -2493,6 +2496,7 @@ and bitsSizeOf t =
   | None ->
   match t with
   | TInt (ik,_) -> 8 * (bytesSizeOfInt ik)
+  | TFloat(FFloat, _) -> 8 * !M.theMachine.M.sizeof_float
   | TFloat(FDouble, _) -> 8 * !M.theMachine.M.sizeof_double
   | TFloat(FLongDouble, _) -> 8 * !M.theMachine.M.sizeof_longdouble
   | TFloat(FFloat128, _) -> 8 * !M.theMachine.M.sizeof_float128
