@@ -1311,11 +1311,16 @@ let longLongPtrType = TPtr(longLongType, [])
 let ulongLongPtrType = TPtr(ulongLongType, [])
 let boolPtrType = TPtr(boolType, [])
 
+let float128Type = TFloat(FFloat128, [])
+let longDoubleType = TFloat(FLongDouble, [])
 let doubleType = TFloat(FDouble, [])
-let complexFlotaType = TFloat(FComplexFloat, [])
+let floatType = TFloat(FFloat, [])
+let shortFloatType = TFloat(FShortFloat, [])
+let complexShortFloatType = TFloat(FComplexShortFloat, [])
+let complexFloatType = TFloat(FComplexFloat, [])
 let complexDoubleType = TFloat(FComplexDouble, [])
 let complexLongDoubleType = TFloat(FComplexLongDouble, [])
-
+let complexFloat128Type = TFloat(FComplexFloat128, [])
 
 (* An integer type that fits pointers. Initialized by initCIL *)
 let upointType = ref voidType
@@ -1771,7 +1776,8 @@ let d_ikind () = function
   | IUInt128 -> text "unsigned __int128"
 
 let d_fkind () = function
-    FFloat -> text "float"
+    FShortFloat -> text "short float"
+  | FFloat -> text "float"
   | FDouble -> text "double"
   | FLongDouble -> text "long double"
   | FFloat128 -> text "_Float128"
@@ -2496,6 +2502,7 @@ and bitsSizeOf t =
   | None ->
   match t with
   | TInt (ik,_) -> 8 * (bytesSizeOfInt ik)
+  | TFloat(FShortFloat, _) -> 8 * !M.theMachine.M.sizeof_shortfloat
   | TFloat(FFloat, _) -> 8 * !M.theMachine.M.sizeof_float
   | TFloat(FDouble, _) -> 8 * !M.theMachine.M.sizeof_double
   | TFloat(FLongDouble, _) -> 8 * !M.theMachine.M.sizeof_longdouble
