@@ -206,6 +206,7 @@ let init_lexicon _ =
       ("__auto_type", fun loc -> AUTOTYPE loc);
 (*      ("__extension__", EXTENSION); *)
       ("__int128", fun _ -> INT128 (currentLoc ()));
+      ("__float128", fun _ -> FLOAT128 (currentLoc ()));
       (* GCC non-standard __int128 aliases (not typedefs!) *)
       ("__int128_t", fun _ -> INT128 (currentLoc ()));
       (**** MS VC ***)
