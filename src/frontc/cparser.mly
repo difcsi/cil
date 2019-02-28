@@ -1149,6 +1149,7 @@ type_spec:   /* ISO 6.7.2 */
 |   TYPEOF LPAREN comma_expression RPAREN     { TtypeofE (smooth_expression (fst $3)), $1 }
 |   TYPEOF LPAREN type_name RPAREN      { let s, d = $3 in
                                           TtypeofT (s, d), $1 }
+|   AUTOTYPE        { Tautotype, $1 }
 ;
 struct_decl_list: /* (* ISO 6.7.2. Except that we allow empty structs. We
                         also allow missing field names. *)
