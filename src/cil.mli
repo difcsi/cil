@@ -495,7 +495,7 @@ and varinfo = {
     (** The storage-class *)
 
     (** All GVarDecls, GVars and GFuns that share this varinfo, if it's global *)
-    mutable vvardecls : (global * storage * bool) list;
+    mutable vvardecls : (global * declinfo) list;
 
     mutable vglob: bool;
     (** True if this is a global variable*)
