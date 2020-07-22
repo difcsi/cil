@@ -452,9 +452,18 @@ and typeinfo = {
     (** True if used. Initially set to false*)
 }
 
-(** {b Variables.}
- Each local or global variable is represented by a unique {!varinfo}
-structure. A global {!varinfo} can be introduced with the [GVarDecl] or
+(** Information about a variable or function declaration. This exists
+ * because different declarations of the same function or variable
+ * might use different attributes, storage or 'inline' modifiers. *)
+and declinfo = {
+    mutable dstorage: storage;
+    mutable dinline: bool;
+    mutable dattr: attributes;
+}
+
+(** {b Variables.} 
+ Each local or global variable is represented by a unique {!Cil.varinfo}
+structure. A global {!Cil.varinfo} can be introduced with the [GVarDecl] or
 [GVar] or [GFun] globals. A local varinfo can be introduced as part of a
 function definition {!fundec}.
 
@@ -495,7 +504,7 @@ and varinfo = {
     (** The storage-class *)
 
     (** All GVarDecls, GVars and GFuns that share this varinfo, if it's global *)
-    mutable vvardecls : (global * storage * bool) list;
+    mutable vvardecls : (global * declinfo) list;
 
     mutable vglob: bool;	        
     (** True if this is a global variable*)
