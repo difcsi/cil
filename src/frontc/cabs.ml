@@ -66,6 +66,7 @@ type typeSpecifier = (* Merge all specifiers into one type *)
   | Tlong
   | Tint64
   | Tint128
+  | Tuint128
   | Tfloat
   | Tfloat32
   | Tfloat64

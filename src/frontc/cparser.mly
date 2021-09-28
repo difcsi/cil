@@ -1100,6 +1100,7 @@ type_spec:   /* ISO 6.7.2 */
 |   LONG            { Tlong, $1 }
 |   INT64           { Tint64, $1 }
 |   INT128          { Tint128, $1 }
+|   UINT128         { Tuint128, $1 }
 |   FLOAT           { Tfloat, $1 }
 |   FLOAT32         { Tfloat32, $1 }
 |   FLOAT64         { Tfloat64, $1 }

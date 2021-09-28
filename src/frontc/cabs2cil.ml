@@ -2753,6 +2753,7 @@ let rec doSpecList (suggestedAnonName: string) (* This string will be part of
 
     (* __int128 is an optional extension, but we support it *)
     | [A.Tint128] -> TInt(IInt128, [])
+    | [A.Tuint128] -> TInt(IUInt128, [])
     | [A.Tsigned; A.Tint128] -> TInt(IInt128, [])
     | [A.Tunsigned; A.Tint64] -> TInt(IUInt128, [])
 

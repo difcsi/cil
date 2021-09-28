@@ -245,6 +245,7 @@ let init_lexicon _ =
                          IDENT ("_Float16x", currentLoc()));
       (* GCC non-standard __int128 aliases (not typedefs!) *)
       ("__int128_t", fun _ -> INT128 (currentLoc ()));
+      ("__uint128_t", fun _ -> UINT128 (currentLoc ()));
       (**** MS VC ***)
       ("__int32", fun loc -> INT loc);
       ("__int64", fun _ -> INT64 (currentLoc ()));
