@@ -427,6 +427,8 @@ global:
                                         { LINKAGE (fst $2, (*handleLoc*) snd $2, $4) }
 | ASM LPAREN const_raw_string RPAREN SEMICOLON
                                         { GLOBASM (fst $3, (*handleLoc*) $1) }
+| STATIC_ASSERT LPAREN expression COMMA string_constant RPAREN SEMICOLON
+                                        { SASSERT (fst $3, fst $5, (*handleLoc*) $1) }
 | pragma                                { $1 }
 /* (* Old-style function prototype. This should be somewhere else, like in
       "declaration". For now we keep it at global scope only because in local
