@@ -2201,9 +2201,11 @@ let conditionalConversion (t2: typ) (t3: typ) (e2: exp option) (e3:exp) : typ =
           let q = cabsAddAttributes q2 q3 in
           TPtr (cabsTypeAddAttributes q b, [])
         with Failure msg -> begin
-          ignore (warn "A.QUESTION: %a does not match %a (%s)"
-                    d_type (unrollType t2) d_type (unrollType t3) msg);
-          t2 (* Just pick one *)
+          if (*emitWarnings*) true then
+              ignore (warn "A.QUESTION: %a does not match %a (%s)"
+                    d_type (unrollType t2) d_type (unrollType t3) msg)
+          else ();
+          Some(t2) (* Just pick one *)
         end
     end
     | _, _,_ -> E.s (error "A.QUESTION for invalid combination of types")
@@ -5224,7 +5226,7 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
         end
 
   with e when continueOnError -> begin
-    (*ignore (E.log "error in doExp (%s)" (Printexc.to_string e));*)
+    ignore (E.log "error in doExp (%s)\n" (Printexc.to_string e));
     E.hadErrors := true;
     (i2c (dInstr (dprintf "booo_exp(%t)" d_thisloc) !currentLoc),
      integer 0, intType)
