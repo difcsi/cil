@@ -526,7 +526,9 @@ let hexquad = hexdigit hexdigit hexdigit hexdigit
 let universal_escape = '\\' ('u' hexquad | 'U' hexquad hexquad)
 let ident = (letter|'_'|'$'|universal_escape)(letter|decdigit|'_'|'$'|universal_escape)*
 
-(* Pragmas that are not parsed by CIL.  We lex them as PRAGMA_LINE tokens *)
+(* Pragmas that are not parsed by CIL.  We lex them as PRAGMA_UNPARSED tokens.
+ * (The pragmas that we do parse have to look, roughly, like an attribute
+ * invocation, possibly with a trailing semicolon; see PRAGMA in cparser.mly.) *)
 let no_parse_pragma =
                "warning" | "GCC" | "STDC" | "clang"
              (* Solaris-style pragmas:  *)
@@ -551,10 +553,10 @@ rule initial =
                                            }
 |		blank			{ addWhite lexbuf; initial lexbuf}
 |               '\n'                    { E.newline ();
-                                          if !pragmaLine then
+                                          if !hashLine then
                                             begin
-                                              pragmaLine := false;
-                                              PRAGMA_EOL
+                                              hashLine := false;
+                                              HASH_EOL
                                             end
                                           else begin
                                             addWhite lexbuf;
@@ -727,11 +729,11 @@ and hash = parse
                    we parse them as a whole line. *)
 | "pragma" blank (no_parse_pragma as pragmaName)
                 { let here = currentLoc () in
-                  PRAGMA_LINE (pragmaName ^ pragma lexbuf, here)
+                  PRAGMA_UNPARSED (pragmaName ^ pragma lexbuf, here)
                 }
 | "pragma"      { hashLine := true; PRAGMA (currentLoc ()) }
 | "define" blank (ident as macName) {  let here = currentLoc () in
-                  maybeScrapingMachineInfo (DEFINE_UNPARSED (macName, macdef lexbuf, here)) }
+                  DEFINE_UNPARSED (macName, macdef lexbuf, here) }
 
 | _	        { addWhite lexbuf; endline lexbuf}
 
