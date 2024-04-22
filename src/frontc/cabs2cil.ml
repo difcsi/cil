@@ -7241,6 +7241,8 @@ and doStatement (s : A.statement) : chunk =
         end
       end
 
+    | A.SASSERT_STMT _ -> skipChunk
+
     | A.DEFINITION d ->
         let s = doDecl false true d  in
 (*
