@@ -3397,8 +3397,11 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                   (* Note that for multi-dimensional arrays we strip off only
                      the first TArray and leave bt alone. *)
                   a.vtype <- turnArrayIntoPointer bt lo attr
-              | TFun _ -> a.vtype <- TPtr(a.vtype, [])
-              | TComp (comp, _) -> begin
+              | (TArray(bt,lo,attr), _) -> (* same again but we move the 'const *) 
+                  a.vtype <- turnArrayIntoPointer bt lo ((Attr ("const", [])) :: attr);
+                  a.vattr <- dropAttribute "const" a.vattr
+              | (TFun _, _) -> a.vtype <- TPtr(a.vtype, [])
+              | (TComp (comp, _), _) -> begin
                   match isTransparentUnion a.vtype with
                     None ->  ()
                   | Some fstfield ->
@@ -3406,7 +3409,7 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                          (argidx, a.vtype) :: !transparentUnionArgs;
                       a.vtype <- fstfield.ftype;
               end
-              | _ -> ());
+              | (_, _) -> ());
               fixupArgumentTypes (argidx + 1) args'
         in
         let args =
