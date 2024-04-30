@@ -3396,8 +3396,14 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                 TArray(bt,lo,attr) ->
                   (* Note that for multi-dimensional arrays we strip off only
                      the first TArray and leave bt alone. *)
-                  a.vtype <- turnArrayIntoPointer bt lo attr
+                  (match a.vtype with
+                     TNamed(_, attrs) when [] <> filterAttributes "const" attrs ->
+                       ((* output_string stderr "saw a const in TNamed attrs!"; *)
+                        a.vtype <- turnArrayIntoPointer (typeAddAttributes [Attr("const", [])] bt) lo (dropAttribute "const" attr))
+                   | _ -> a.vtype <- turnArrayIntoPointer bt lo attr
+                  )
               | (TArray(bt,lo,attr), _) -> (* same again but we move the 'const *) 
+                  output_string stderr "Moving a 'const'!";
                   a.vtype <- turnArrayIntoPointer bt lo ((Attr ("const", [])) :: attr);
                   a.vattr <- dropAttribute "const" a.vattr
               | (TFun _, _) -> a.vtype <- TPtr(a.vtype, [])
@@ -3411,6 +3417,7 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
               end
               | (_, _) -> ());
               fixupArgumentTypes (argidx + 1) args'
+              )
         in
         let args =
           match targs with
