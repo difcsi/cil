@@ -3414,10 +3414,10 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                       transparentUnionArgs :=
                          (argidx, a.vtype) :: !transparentUnionArgs;
                       a.vtype <- fstfield.ftype;
-              end
-              | (_, _) -> ());
+                end
+              | _ -> (a.vtype <- maybeAdjustToPointerType a.vtype));
               fixupArgumentTypes (argidx + 1) args'
-              )
+          )
         in
         let args =
           match targs with
