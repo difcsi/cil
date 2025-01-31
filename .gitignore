@@ -83,6 +83,8 @@
 # /lib/perl5/
 /lib/perl5/App/Cilly/CilConfig.pm
 /lib/perl5/App/Cilly.pm
+/lib/perl5/App/Cilly.pm.tmp
+/lib/perl5/App/Cilly.pm~
 /lib/perl5/Makefile
 /lib/perl5/Makefile.old
 /lib/perl5/MYMETA.yml

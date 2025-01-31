@@ -22,8 +22,14 @@ remove: [
   [make "uninstall"]
 ]
 depends: [
+  "ocaml" {= "4.11.0"}
   "ocamlfind"
   "ocamlbuild" {build}
   "hevea" {build & doc}
   "hevea" {build & test}
 ]
+
+synopsis: "C Intermediate Language"
+description: """
+CIL is a front-end for the C programming language that facilitates
+program analysis and transformation."""
