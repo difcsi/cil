@@ -314,8 +314,7 @@ let transformOffsetOf (speclist, dtype) member =
 %token<Cabs.cabsloc> DECLSPEC
 %token<string * Cabs.cabsloc> PRAGMA_LINE
 %token<Cabs.cabsloc> PRAGMA
-%token HASH_EOL
-%token<string * string * Cabs.cabsloc> MACRO_DEF /*(* srk: or these? *)*/
+%token PRAGMA_EOL
 
 /* sm: cabs tree transformation specification keywords */
 %token<Cabs.cabsloc> AT_TRANSFORM AT_TRANSFORMEXPR AT_SPECIFIER AT_EXPR
@@ -433,7 +432,6 @@ global:
 | STATIC_ASSERT LPAREN expression RPAREN SEMICOLON
                                         { SASSERT_GLOB (fst $3, "", (*handleLoc*) $1) }
 | pragma                                { $1 }
-| define                                { $1 }
 /* (* Old-style function prototype. This should be somewhere else, like in
       "declaration". For now we keep it at global scope only because in local
       scope it looks too much like a function call  *) */
