@@ -49,6 +49,8 @@ module H = Hashtbl
 
 let matchingParsOpen = ref 0
 
+let macDefs = ref []
+
 let currentLoc () = Cabshelper.currentLoc ()
 
 (* string -> unit *)
@@ -104,11 +106,6 @@ let dbgToken (t: token) =
     t
   end else
     t
-
-let maybeScrapingMachineInfo (t: token) =
-    match t with
-        DEFINE_UNPARSED (name, def, loc) -> (); t
-       | _ -> t
 
 (*
 ** Keyword hashtable
@@ -733,8 +730,8 @@ and hash = parse
                 }
 | "pragma"      { hashLine := true; PRAGMA (currentLoc ()) }
 | "define" blank (ident as macName) {  let here = currentLoc () in
-                  DEFINE_UNPARSED (macName, macdef lexbuf, here) }
-
+                  let lexed = macdef lexbuf in
+                  (macDefs := (macName, lexed, here) :: !macDefs; E.newline(); initial lexbuf) }
 | _	        { addWhite lexbuf; endline lexbuf}
 
 and file lineno =  parse
