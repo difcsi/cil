@@ -2000,7 +2000,7 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
                        CombineFunarg else CombineOther)
                      (removeOuterQualifierAttributes ot') (removeOuterQualifierAttributes at)
                  in
-                 let a = addAttributes oa aa in
+                 let a = combineAddAttributes oa aa in
                  (n, t, a))
                oldargslist argslist),
 	  (let oldrt' = !typeForCombinedArg map oldrt in
@@ -2086,9 +2086,8 @@ let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
      * or a new def with an old GVarDecl.
      * First, snapshot the incoming declaration -- whether or not it's
      * also a definition -- as a GVarDecl. FIXME: why not just as whatever it really is?  *)
-    oldvi.vvardecls <- (let glob = if isadef then (GVarDecl(oldvi, vi.vdecl)) else (GVarDecl(oldvi, vi.vdecl))
-        in let decl = { dstorage = vi.vstorage; dinline = vi.vinline; dattr = vi.vattr; }
-        in (glob, decl) :: oldvi.vvardecls);
+    oldvi.vvardecls <- (let decl = { dstorage = vi.vstorage; dinline = vi.vinline; dattr = vi.vattr; }
+        in (GVarDecl(oldvi, vi.vdecl), decl) :: oldvi.vvardecls);
     oldvi.vtype <- (try combineTypes
             (if isadef then CombineFundef else CombineOther) oldvi.vtype vi.vtype
           with Failure reason ->
@@ -4542,6 +4541,14 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
                                            takes INTs as arguments  *)
           | A.VARIABLE n -> begin
               try
+                (* NB: the type looked up here may be slightly inconsistent
+                 * with the type used in the function's implementation. This is
+                 * because `const` and `volatile` attributes can exist in
+                 * prototypes but be missing in a function's implementation
+                 * (see C++03 13.1-3). That means that our output can be
+                 * inconsistent with the original source: we might introduce
+                 * casting to `const` or `volatile` that a function's
+                 * implementation doesn't expect. *)
                 let vi, _ = lookupVar n in
                 (empty, Lval(var vi), vi.vtype) (* Found. Do not use
                                                    finishExp. Simulate what =
