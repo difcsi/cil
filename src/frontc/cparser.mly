@@ -1223,6 +1223,9 @@ direct_decl: /* (* ISO 6.7.5 *) */
 |   LPAREN attributes declarator RPAREN
                                    { let (n,decl,al,loc) = $3 in
                                      (n, PARENTYPE($2,decl,al)) }
+|   direct_decl LBRACKET LBRACKET attr_list RBRACKET RBRACKET 
+                                   { let (n, decl) = $1 in
+                                     (n, ARRAY(decl, [("__attribute__", $4)], NOTHING)) }
 
 |   direct_decl LBRACKET attributes comma_expression_opt RBRACKET
                                    { let (n, decl) = $1 in
@@ -1454,6 +1457,8 @@ attribute_nocv:
 |   ATTRIBUTE_USED                      { ("__attribute__",
                                              [ VARIABLE "used" ]), $1 }
 *)*/
+|   DOUBLE_LBRACKET attr_list_ne RBRACKET RBRACKET
+                                        {("__attribute__", $2), $1}
 |   DECLSPEC paren_attr_list_ne         { ("__declspec", $2), $1 }
                                         /* ISO 6.7.3 */
 |   THREAD                              { ("__thread",[]), $1 }
@@ -1481,6 +1486,8 @@ just_attribute:
     ATTRIBUTE LPAREN paren_attr_list RPAREN
                                         { ("__attribute__", $3) }
 |   DECLSPEC paren_attr_list_ne         { ("__declspec", $2) }
+|   DOUBLE_LBRACKET attr_list_ne RBRACKET RBRACKET
+                                        {("__attribute__", $2)}
 ;
 
 /* this can't be empty, b/c I folded that possibility into the calling
