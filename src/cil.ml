@@ -3151,6 +3151,7 @@ let initGccBuiltins () : unit =
   H.add h "__builtin_nansl" (longDoubleType, [ charConstPtrType ], false);
   H.add h "__builtin_next_arg" ((if hasbva then TBuiltin_va_list [] else voidPtrType), [], false) (* When we parse builtin_next_arg we drop the argument *);
   H.add h "__builtin_object_size" (sizeType, [ voidPtrType; intType ], false);
+  H.add h "__builtin_dynamic_object_size" (sizeType, [ voidPtrType; intType ], false);
   H.add h "__builtin_isnan" (intType, [ doubleType ], false);
   H.add h "__builtin_isinf_sign" (intType, [ doubleType ], false);
 
