@@ -76,13 +76,7 @@ type typeSpecifier = (* Merge all specifiers into one type *)
   | Tfloat16
   | Tbf16
   | Tdouble
-  | Tfloat128
-  | Tfloat64   (* "Interchange floating types" -- see ISO/IECTS 18661-5 ...     *)
-  | Tfloat32   (* ... http://www.open-std.org/jtc1/sc22/wg14/www/docs/n1796.pdf *)
-  | Tfloat16
-  | Tfloat128x (* "Extended floating types" -- idem. *)
-  | Tfloat64x  
-  | Tfloat32x
+  | Tfloat128x
   | Tfloat16x
   | Tcomplex
   | Tsigned

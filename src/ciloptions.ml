@@ -193,6 +193,7 @@ let options : (string * Arg.spec * string) list =
     " Print #line directives in the output in post-preprocessing style (\"# ...\")";
 
     "--commPrintLnSparse",
+    Arg.Unit (fun _ ->
                 Cil.lineDirectiveStyle := Some Cil.LineCommentSparse;
                 Cprint.printLnComment := true),
     " Print commented #line directives in the output only when the line number changes.";

@@ -70,6 +70,7 @@ let modelParse (s:string) : mach =
     alignof_ptr = getAlignof entries "pointer";
     alignof_enum = getInt entries "alignof_enum";
     sizeof_float = getSizeof entries "float";
+    sizeof_shortfloat = (try getSizeof entries "shortfloat" with Not_found -> 2);
     alignof_float = getAlignof entries "float";
     sizeof_float32x = getSizeof entries "float32x";
     alignof_float32x = getAlignof entries "float32x";

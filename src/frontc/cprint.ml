@@ -68,6 +68,7 @@ let version = "Cprint 2.1e 9.1.99 Hugues Cassé"
 
 let printLn = ref true
 let printLnComment = ref false
+let msvcMode = ref false
 
 let printCounters = ref false
 let printComments = ref false
@@ -179,13 +180,7 @@ and print_type_spec = function
   | Tfloat16 -> print "_Float16"
   | Tbf16 -> print "__bf16"
   | Tdouble -> print "double "
-  | Tfloat128 -> print "__float128 "
   | Tfloat128x -> print "_Float128x "
-  | Tfloat64 -> print "_Float64 "
-  | Tfloat64x -> print "_Float64x "
-  | Tfloat32 -> print "_Float32 "
-  | Tfloat32x -> print "_Float32x "
-  | Tfloat16 -> print "_Float16 "
   | Tfloat16x -> print "_Float16x "
   | Tcomplex -> print "_Complex "
   | Tsigned -> printu "signed"

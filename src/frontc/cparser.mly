@@ -262,7 +262,7 @@ let transformOffsetOf (speclist, dtype) member =
 
 %token EOF
 %token<Cabs.cabsloc> CHAR INT BOOL DOUBLE FLOAT VOID INT64 INT32
-%token<Cabs.cabsloc> INT128 FLOAT128 COMPLEX /* C99 */
+%token<Cabs.cabsloc> INT128 UINT128 FLOAT128 COMPLEX /* C99 */
 %token<Cabs.cabsloc> FLOAT32 FLOAT64 /* FloatN */
 %token<Cabs.cabsloc> FLOAT32X FLOAT64X /* FloatNx */
 %token<Cabs.cabsloc> FLOAT16
@@ -295,6 +295,8 @@ let transformOffsetOf (speclist, dtype) member =
 %token<Cabs.cabsloc> LPAREN RBRACE
 %token<Cabs.cabsloc> LBRACE
 %token LBRACKET RBRACKET
+%token<Cabs.cabsloc> DOUBLE_LBRACKET
+%token PRAGMA_EOL
 %token<Cabs.cabsloc> COLON
 %token<Cabs.cabsloc> SEMICOLON
 %token COMMA ELLIPSIS QUEST
@@ -427,7 +429,7 @@ global:
                                         { LINKAGE (fst $2, (*handleLoc*) snd $2, $4) }
 | ASM LPAREN const_raw_string RPAREN SEMICOLON
                                         { GLOBASM (fst $3, (*handleLoc*) $1) }
-| STATIC_ASSERT LPAREN expression COMMA string_constant RPAREN SEMICOLON
+| STATIC_ASSERT LPAREN expression COMMA const_raw_string RPAREN SEMICOLON
                                         { SASSERT_GLOB (fst $3, fst $5, (*handleLoc*) $1) }
 | STATIC_ASSERT LPAREN expression RPAREN SEMICOLON
                                         { SASSERT_GLOB (fst $3, "", (*handleLoc*) $1) }
@@ -1154,7 +1156,6 @@ type_spec:   /* ISO 6.7.2 */
 |   TYPEOF LPAREN comma_expression RPAREN     { TtypeofE (smooth_expression (fst $3)), $1 }
 |   TYPEOF LPAREN type_name RPAREN      { let s, d = $3 in
                                           TtypeofT (s, d), $1 }
-|   AUTOTYPE        { Tautotype, $1 }
 ;
 struct_decl_list: /* (* ISO 6.7.2. Except that we allow empty structs. We
                         also allow missing field names. *)
@@ -1718,6 +1719,6 @@ asmclobberlst:
 | asmclobberlst_ne                       { $1 }
 ;
 asmclobberlst_ne:
-   string_constant                           { [fst $1] }
-|  string_constant COMMA asmclobberlst_ne    { fst $1 :: $3 }
+   const_raw_string                           { [fst $1] }
+|  const_raw_string COMMA asmclobberlst_ne    { fst $1 :: $3 }
 ;

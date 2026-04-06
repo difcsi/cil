@@ -469,6 +469,7 @@ int main(int argc, char **argv)
       printf("\t sizeof_longlong            = %d;\n", (int)sizeof(LONGLONG));
       printf("\t sizeof_ptr                 = %d;\n", (int)sizeof(int *));
       printf("\t sizeof_float               = %d;\n", (int)sizeof(float));
+      printf("\t sizeof_shortfloat          = %d;\n", 2);
       printf("\t sizeof_float32x            = %d;\n", (int)sizeof(_Float32x));
 #if __HAVE_FLOAT64X
       printf("\t sizeof_float64x            = %d;\n", (int)sizeof(_Float64x));

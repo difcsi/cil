@@ -566,7 +566,7 @@ let anonStructName (k: string) (suggested: string) (context: 'a) =
   let fileCanonical = canonicalizeFilename !currentLoc.file in
   let id = newStructId (Hashtbl.hash_param 100 1000
   (fileCanonical, !currentLoc.line)) in
-  (* let _ = output_string Pervasives.stderr ("At " ^ !currentLoc.file ^ " (canonicalized: " ^
+  (* let _ = output_string Stdlib.stderr ("At " ^ !currentLoc.file ^ " (canonicalized: " ^
     fileCanonical ^ ") generated a new struct id: " ^ (string_of_int id) ^ "\n") in *)
   "__anon" ^ k ^ (if suggested <> "" then "_"  ^ suggested else "")
   ^ "_" ^ (string_of_int id)
@@ -1850,6 +1850,10 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
   else if q <> [] then
     cabsTypeAddAttributes q (combineTypes what (setTypeAttrs oldt olda) (setTypeAttrs t a))
   else
+  let combineAddAttributes olda a =
+     if what = CombineFunarg || what  = CombineFunret then dropAttribute "const" (addAttributes olda a)
+     else addAttributes olda a
+  in
   match oldt, t with
   | TVoid olda, TVoid a -> TVoid (cabsAddAttributes olda a)
   | TInt (oldik, olda), TInt (ik, a) ->
@@ -2229,7 +2233,7 @@ let conditionalConversion (t2: typ) (t3: typ) (e2: exp option) (e3:exp) : typ =
               ignore (warn "A.QUESTION: %a does not match %a (%s)"
                     d_type (unrollType t2) d_type (unrollType t3) msg)
           else ();
-          Some(t2) (* Just pick one *)
+          t2 (* Just pick one *)
         end
     end
     | _, _,_ -> E.s (error "A.QUESTION for invalid combination of types")
@@ -3216,7 +3220,7 @@ and cabsPartitionAttributes
         in
         match kind with
           AttrName _ -> loop (a::n, f, t) rest
-        | AttrFunType ->
+        | AttrFunType _ ->
             loop (n, a::f, t) rest
         | AttrType -> loop (n, f, a::t) rest
   in
@@ -3413,6 +3417,33 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
           in
           TPtr(bt, a')
         in
+        let maybeAdjustToPointerType (t: typ) : typ =
+          let ut = unrollType t in
+          match (t, ut) with
+            (_, TArray(elT, maybeLength, collectedAttrs)) ->
+              let newCollectedAttrs =
+                match maybeLength with
+                  None -> collectedAttrs
+                | Some l -> begin
+                    try
+                      let lengthAttr : attrparam = expToAttrParam l in
+                      addAttribute (Attr("arraylen", [ lengthAttr ])) collectedAttrs
+                    with NotAnAttrParam _ -> begin
+                        ignore (warn "Cannot represent the length of array as an attribute");
+                          collectedAttrs
+                    end
+                  end
+              in
+              let maybeEltConstAttr = filterAttributes "const" newCollectedAttrs in
+              let maybeEltVolatileAttr = filterAttributes "volatile" newCollectedAttrs in
+              TPtr(
+                typeAddAttributes (maybeEltConstAttr @ maybeEltVolatileAttr) elT,
+                dropAttributes ["const"; "volatile"] newCollectedAttrs
+              )
+          | (_, TFun(retT, maybeArgs, isVa, attrs)) ->
+              TPtr(ut, [])
+          | _ -> t
+        in
         let rec fixupArgumentTypes (argidx: int) (args: varinfo list) : unit =
           match args with
             [] -> ()
@@ -3427,12 +3458,8 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                         a.vtype <- turnArrayIntoPointer (typeAddAttributes [Attr("const", [])] bt) lo (dropAttribute "const" attr))
                    | _ -> a.vtype <- turnArrayIntoPointer bt lo attr
                   )
-              | (TArray(bt,lo,attr), _) -> (* same again but we move the 'const *) 
-                  output_string stderr "Moving a 'const'!";
-                  a.vtype <- turnArrayIntoPointer bt lo ((Attr ("const", [])) :: attr);
-                  a.vattr <- dropAttribute "const" a.vattr
-              | (TFun _, _) -> a.vtype <- TPtr(a.vtype, [])
-              | (TComp (comp, _), _) -> begin
+              | TFun _ -> a.vtype <- TPtr(a.vtype, [])
+              | TComp (comp, _) -> begin
                   match isTransparentUnion a.vtype with
                     None ->  ()
                   | Some fstfield ->
@@ -3442,7 +3469,6 @@ and doType (nameortype: attributeClass) (* This is AttrName if we are doing
                 end
               | _ -> (a.vtype <- maybeAdjustToPointerType a.vtype));
               fixupArgumentTypes (argidx + 1) args'
-          )
         in
         let args =
           match targs with
@@ -7369,11 +7395,11 @@ let checkMachineSpecAgainstMacros () =
     List.iter (fun (a1, a2, loc) ->
       if loc.filename = "<built-in>" then
             let warnIf cond msg =
-                if cond then output_string Pervasives.stderr ("Warning: " ^
+                if cond then output_string Stdlib.stderr ("Warning: " ^
                     "machine mismatch: " ^ msg ^ "\n") else ()
             in
             let readInt (s:string) = try int_of_string (String.trim s)
-                with Failure _ -> (output_string Pervasives.stderr ("Not an int: " ^ s ^ "\n"); 0)
+                with Failure _ -> (output_string Stdlib.stderr ("Not an int: " ^ s ^ "\n"); 0)
             in
             (* ("Saw a built-in macro: " ^ a1 ^ " defined as " ^ a2 ^ "\n") *)
             match a1 with

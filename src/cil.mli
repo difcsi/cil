@@ -58,6 +58,7 @@ val cstd_of_string: string -> cstd
 val cstd: cstd ref
 val gnu89inline: bool ref
 val addReturnOnNoreturnFallthrough: bool ref
+val gnucDialectVersion: int ref
 
 (** This module defines the abstract syntax of CIL. It also provides utility
    functions for traversing the CIL data structures, and pretty-printing
@@ -160,6 +161,8 @@ and global =
   | GText of string                     (** Some text (printed verbatim) at
                                             top level. E.g., this way you can
                                             put comments in the output.  *)
+
+  | GStaticAssert of exp * string * location  (** Static assert *)
 
 (** {b Types}. A C type is represented in CIL using the type {!typ}.
    Among types we differentiate the integral types (with different kinds
@@ -293,11 +296,13 @@ and ikind =
 (** Various kinds of floating-point numbers*)
 and fkind =
     FFloat              (** [float] *)
+  | FShortFloat         (** [short float] *)
   | FDouble             (** [double] *)
   | FLongDouble         (** [long double] *)
   | FFloat128           (** [float128] *)
   | FFloat16            (** [_Float16] *)
   | FBf16               (** [__bf16] *)
+  | FComplexShortFloat  (** [short float _Complex] *)
   | FComplexFloat       (** [float _Complex] *)
   | FComplexDouble      (** [double _Complex] *)
   | FComplexLongDouble  (** [long double _Complex]*)
@@ -477,6 +482,12 @@ and a new unique identifier
  A [varinfo] is also used in a function type to denote the list of formals.
 
 *)
+
+and declinfo = {
+    mutable dstorage: storage;
+    mutable dinline: bool;
+    mutable dattr: attributes;
+}
 
 (** Information about a variable. *)
 and varinfo = {
@@ -1798,7 +1809,7 @@ val mkFor: start:stmt list -> guard:exp -> next: stmt list ->
 (** Various classes of attributes *)
 type attributeClass =
     AttrName of bool (** Attribute of a name. *)
-  | AttrFunType  (** Attribute of a function type. *)
+  | AttrFunType of bool  (** Attribute of a function type. *)
   | AttrType  (** Attribute of a type *)
 
 (** This table contains the mapping of predefined attributes to classes.

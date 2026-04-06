@@ -51,6 +51,8 @@ let matchingParsOpen = ref 0
 
 let macDefs = ref []
 
+let hashLine = ref false
+
 let currentLoc () = Cabshelper.currentLoc ()
 
 (* string -> unit *)
@@ -209,50 +211,13 @@ let init_lexicon _ =
 (*      ("__extension__", EXTENSION); *)
       ("__int128", fun _ -> INT128 (currentLoc ()));
       ("__float128", fun _ -> FLOAT128 (currentLoc ()));
-      ("_Float128", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float128 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128 as its own token type\n") in
-                         FLOAT128 (currentLoc ())
-                       else
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128 as an ident\n") in
-                         IDENT ("_Float128", currentLoc()));
-      ("_Float128x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float128x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128x as its own token type\n") in
-                         FLOAT128X (currentLoc ())
-                       else
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128x as an ident\n") in
-                         IDENT ("_Float128x", currentLoc()));
-      ("_Float64", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float64 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as its own token type\n") in
-                         FLOAT64 (currentLoc ())
-                       else
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as an ident\n") in
-                         IDENT ("_Float64", currentLoc())
-                         );
-      ("_Float64x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float64x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64x as its own token type\n") in
-                         FLOAT64X (currentLoc ())
-                       else
-                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as an ident\n") in
-                         IDENT ("_Float64x", currentLoc()));
-      ("_Float32", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float32 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         FLOAT32 (currentLoc ())
-                       else
-                         IDENT ("_Float32", currentLoc())
-                         );
-      ("_Float32x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float32x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         FLOAT32X (currentLoc ())
-                       else
-                         IDENT ("_Float32x", currentLoc()));
-      ("_Float16", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float16 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         FLOAT16 (currentLoc ())
-                       else
-                         IDENT ("_Float16", currentLoc())
-                         );
-      ("_Float16x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float16x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
-                         FLOAT16X (currentLoc ())
-                       else
-                         IDENT ("_Float16x", currentLoc()));
-      (* GCC non-standard __int128 aliases (not typedefs!) FIXME: in which version of GNU C did these appear? *)
+      ("_Float128", fun loc -> if !Machdep.theMachine.Machdep.have_float128 then FLOAT128 loc else IDENT ("_Float128", loc));
+      ("_Float32", fun loc -> if !Machdep.theMachine.Machdep.have_float32 then FLOAT32 loc else IDENT ("_Float32", loc));
+      ("_Float64", fun loc -> if !Machdep.theMachine.Machdep.have_float64 then FLOAT64 loc else IDENT ("_Float64", loc));
+      ("_Float32x", fun loc -> if !Machdep.theMachine.Machdep.have_float32x then FLOAT32X loc else IDENT ("_Float32x", loc));
+      ("_Float64x", fun loc -> if !Machdep.theMachine.Machdep.have_float64x then FLOAT64X loc else IDENT ("_Float64x", loc));
+      ("_Float16", fun loc -> if !Machdep.theMachine.Machdep.have_float16 then FLOAT16 loc else IDENT ("_Float16", loc));
+      (* GCC non-standard __int128 aliases (not typedefs!) *)
       ("__int128_t", fun _ -> INT128 (currentLoc ()));
       ("__uint128_t", fun _ -> UINT128 (currentLoc ()));
       (**** MS VC ***)
@@ -645,7 +610,7 @@ rule initial =
 |		'{'		       {dbgToken (LBRACE (currentLoc ()))}
 |		'}'		       {dbgToken (RBRACE (currentLoc ()))}
 |		"[["				{dbgToken (DOUBLE_LBRACKET (currentLoc ()))}
-|		'['				{dbgToken (LBRACKET (currentLoc ()))}
+|		'['				{dbgToken (LBRACKET)}
 |		']'				{RBRACKET}
 |		'('		       {dbgToken (LPAREN (currentLoc ())) }
 |		')'				{dbgToken (RPAREN (currentLoc ()))}
@@ -727,7 +692,7 @@ and hash = parse
                    we parse them as a whole line. *)
 | "pragma" blank (no_parse_pragma as pragmaName)
                 { let here = currentLoc () in
-                  PRAGMA_UNPARSED (pragmaName ^ pragma lexbuf, here)
+                  PRAGMA_LINE (pragmaName ^ pragma lexbuf, here)
                 }
 | "pragma"      { hashLine := true; PRAGMA (currentLoc ()) }
 | "define" blank (ident as macName) {  let here = currentLoc () in
@@ -754,6 +719,11 @@ and pragma = parse
    '\n'                 { E.newline (); "" }
 |   _                   { let cur = Lexing.lexeme lexbuf in
                           cur ^ (pragma lexbuf) }
+
+and macdef = parse
+   '\n'                 { E.newline (); "" }
+|   _                   { let cur = Lexing.lexeme lexbuf in
+                          cur ^ (macdef lexbuf) }
 
 and str = parse
         '"'             {[]} (* no nul terminiation in CST_STRING '"' *)

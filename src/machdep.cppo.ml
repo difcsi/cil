@@ -11,6 +11,7 @@ type mach = {
   sizeof_longlong: int;   (* Size of "long long" *)
   sizeof_ptr: int;        (* Size of pointers *)
   sizeof_float: int;      (* Size of "float" *)
+  sizeof_shortfloat: int; (* Size of "short float" *)
   sizeof_float32x: int;   (* Size of "_Float32x" *)
   sizeof_float64x: int;   (* Size of "_Float64x" *)
   sizeof_double: int;     (* Size of "double" *)
