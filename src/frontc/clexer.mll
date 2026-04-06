@@ -50,6 +50,8 @@ module H = Hashtbl
 
 let matchingParsOpen = ref 0
 
+let macDefs = ref []
+
 let currentLoc () = Cabshelper.currentLoc ()
 
 (* string -> unit *)
@@ -105,7 +107,6 @@ let dbgToken (t: token) =
     t
   end else
     t
-
 
 (*
 ** Keyword hashtable
@@ -196,21 +197,29 @@ let init_lexicon _ =
       ("__int128", fun _ -> INT128 (currentLoc ()));
       ("__float128", fun _ -> FLOAT128 (currentLoc ()));
       ("_Float128", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float128 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128 as its own token type\n") in
                          FLOAT128 (currentLoc ())
                        else
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128 as an ident\n") in
                          IDENT ("_Float128", currentLoc()));
       ("_Float128x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float128x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128x as its own token type\n") in
                          FLOAT128X (currentLoc ())
                        else
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float128x as an ident\n") in
                          IDENT ("_Float128x", currentLoc()));
       ("_Float64", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float64 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as its own token type\n") in
                          FLOAT64 (currentLoc ())
                        else
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as an ident\n") in
                          IDENT ("_Float64", currentLoc())
                          );
       ("_Float64x", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float64x && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64x as its own token type\n") in
                          FLOAT64X (currentLoc ())
                        else
+                         let _ = output_string Pervasives.stderr ("Warning: lexing _Float64 as an ident\n") in
                          IDENT ("_Float64x", currentLoc()));
       ("_Float32", fun _ -> if 0 <> !Machdep.theMachine.Machdep.alignof_float32 && not !Cprint.msvcMode && !Cil.gnucDialectVersion >= 700 then
                          FLOAT32 (currentLoc ())
@@ -257,12 +266,23 @@ let init_lexicon _ =
        fun _ -> NAMED_TYPE ("__builtin_va_list", currentLoc ()));
       ("__builtin_va_arg", fun loc -> BUILTIN_VA_ARG loc);
       ("__builtin_types_compatible_p", fun loc -> BUILTIN_TYPES_COMPAT loc);
+      ("__builtin_convertvector", fun loc -> BUILTIN_CONVVEC loc);
       ("__builtin_offsetof", fun loc -> BUILTIN_OFFSETOF loc);
       (* On some versions of GCC __thread is a regular identifier *)
-      ("__thread", fun loc -> 
-                      if !Machdep.theMachine.Machdep.__thread_is_keyword then 
+      ("__thread", fun loc ->
+                      if !Machdep.theMachine.Machdep.__thread_is_keyword then
                          THREAD loc
-                       else 
+                       else
+                         IDENT ("__thread", loc));
+      ("thread_local", fun loc ->
+                      if !Machdep.theMachine.Machdep.__thread_is_keyword then
+                         THREAD loc
+                       else
+                         IDENT ("__thread", loc));
+      ("_Thread_local", fun loc ->
+                      if !Machdep.theMachine.Machdep.__thread_is_keyword then
+                         THREAD loc
+                       else
                          IDENT ("__thread", loc));
     ]
 
@@ -486,7 +506,7 @@ let oct_escape = '\\' octdigit octdigit? octdigit?
  * (The pragmas that we do parse have to look, roughly, like an attribute
  * invocation, possibly with a trailing semicolon; see PRAGMA in cparser.mly.) *)
 let no_parse_pragma =
-               "warning" | "GCC"
+               "warning" | "GCC" | "clang"
              (* Solaris-style pragmas:  *)
              | "ident" | "section" | "option" | "asm" | "use_section" | "weak"
              | "redefine_extname"
@@ -588,7 +608,8 @@ rule initial =
 	
 |		'{'		       {dbgToken (LBRACE (currentLoc ()))}
 |		'}'		       {dbgToken (RBRACE (currentLoc ()))}
-|		'['				{LBRACKET}
+|		"[["				{dbgToken (DOUBLE_LBRACKET (currentLoc ()))}
+|		'['				{dbgToken (LBRACKET (currentLoc ()))}
 |		']'				{RBRACKET}
 |		'('		       {dbgToken (LPAREN (currentLoc ())) }
 |		')'				{RPAREN}
@@ -677,8 +698,8 @@ and hash = parse
                 }
 | "pragma"      { hashLine := true; PRAGMA (currentLoc ()) }
 | "define" blank (ident as macName) {  let here = currentLoc () in
-                  DEFINE_UNPARSED (macName, macdef lexbuf, here) }
-
+                  let lexed = macdef lexbuf in
+                  (macDefs := (macName, lexed, here) :: !macDefs; E.newline(); initial lexbuf) }
 | _	        { addWhite lexbuf; endline lexbuf}
 
 and file =  parse 
@@ -701,11 +722,11 @@ and endline = parse
 and pragma = parse
    '\n'                 { E.newline (); "" }
 |   _                   { let cur = Lexing.lexeme lexbuf in 
-                          cur ^ (pragma lexbuf) }  
+                          cur ^ (pragma lexbuf) }
 and macdef = parse
    '\n'                 { E.newline (); "" }
 |   _                   { let cur = Lexing.lexeme lexbuf in 
-                          cur ^ (macdef lexbuf) }  
+                          cur ^ (macdef lexbuf) }
 
 and str = parse
         '"'             {[]} (* no nul terminiation in CST_STRING '"' *)

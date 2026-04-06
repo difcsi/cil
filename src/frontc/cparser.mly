@@ -84,6 +84,18 @@ let smooth_expression lst =
 
 
 let currentFunctionName = ref "<outside any function>"
+
+let functionSpecificAttributes =
+        [
+         (SpecAttr ("__attribute__", [VARIABLE "__pure__"]))
+        ]
+let separateFunctionAttrsFromSpecifiers specifiers =
+        let isFunctionSpecific attr = List.mem attr functionSpecificAttributes in
+        let specAttrToAttribute (SpecAttr attr) = attr in
+        let specsFunctionSpecific = List.filter isFunctionSpecific specifiers in
+        let attrsFunctionSpecific = List.map specAttrToAttribute specsFunctionSpecific in
+        let specsNonFunctionSpecific = List.filter (Fun.negate isFunctionSpecific) specifiers in
+        (attrsFunctionSpecific, specsNonFunctionSpecific)
     
 let announceFunctionName ((n, decl, _, _):name) =
   !Lexerhack.add_identifier n;
@@ -282,7 +294,8 @@ let transformOffsetOf (speclist, dtype) member =
 %token RPAREN 
 %token<Cabs.cabsloc> LPAREN RBRACE
 %token<Cabs.cabsloc> LBRACE
-%token LBRACKET RBRACKET
+%token<Cabs.cabsloc> DOUBLE_LBRACKET LBRACKET
+%token RBRACKET
 %token COLON
 %token<Cabs.cabsloc> SEMICOLON
 %token COMMA ELLIPSIS QUEST
@@ -298,15 +311,13 @@ let transformOffsetOf (speclist, dtype) member =
 %token<Cabs.cabsloc> BUILTIN_VA_ARG ATTRIBUTE_USED
 %token BUILTIN_VA_LIST
 %token BLOCKATTRIBUTE 
-%token<Cabs.cabsloc> BUILTIN_TYPES_COMPAT BUILTIN_OFFSETOF
+%token<Cabs.cabsloc> BUILTIN_TYPES_COMPAT BUILTIN_OFFSETOF BUILTIN_CONVVEC
 %token<Cabs.cabsloc> DECLSPEC
 %token<string * Cabs.cabsloc> MSASM MSATTR
 %token<string * Cabs.cabsloc> HASH_LINE
 %token<string * Cabs.cabsloc> PRAGMA_UNPARSED
-%token<string * string * Cabs.cabsloc> DEFINE_UNPARSED /*(* srk: merge these? *)*/
 %token<Cabs.cabsloc> PRAGMA
 %token HASH_EOL
-%token<string * string * Cabs.cabsloc> MACRO_DEF /*(* srk: or these? *)*/
 
 /* sm: cabs tree transformation specification keywords */
 %token<Cabs.cabsloc> AT_TRANSFORM AT_TRANSFORMEXPR AT_SPECIFIER AT_EXPR
@@ -426,7 +437,6 @@ global:
 | STATIC_ASSERT LPAREN expression RPAREN SEMICOLON
                                         { SASSERT_GLOB (fst $3, "", (*handleLoc*) $1) }
 | pragma                                { $1 }
-| define                                { $1 }
 /* (* Old-style function prototype. This should be somewhere else, like in
     * "declaration". For now we keep it at global scope only because in local
     * scope it looks too much like a function call  *) */
@@ -504,6 +514,10 @@ postfix_expression:                     /*(* 6.5.2 *)*/
                                 [TYPE_SIZEOF(b1,d1); TYPE_SIZEOF(b2,d2)]), $1 }
 |               BUILTIN_OFFSETOF LPAREN type_name COMMA offsetof_member_designator RPAREN
                         { transformOffsetOf $3 $5, $1 }
+|               BUILTIN_CONVVEC LPAREN expression COMMA type_name RPAREN
+                        { let b, d = $5 in
+                          CALL (VARIABLE "__builtin_convertvector",
+                                [fst $3; TYPE_SIZEOF (b, d)]), $1 }
 |		postfix_expression DOT id_or_typename
 		        {MEMBEROF (fst $1, $3), snd $1}
 |		postfix_expression ARROW id_or_typename   
@@ -1107,6 +1121,9 @@ direct_decl: /* (* ISO 6.7.5 *) */
 |   LPAREN attributes declarator RPAREN
                                    { let (n,decl,al,loc) = $3 in
                                      (n, PARENTYPE($2,decl,al)) }
+|   direct_decl LBRACKET LBRACKET attr_list RBRACKET RBRACKET 
+                                   { let (n, decl) = $1 in
+                                     (n, ARRAY(decl, [("__attribute__", $4)], NOTHING)) }
 
 |   direct_decl LBRACKET attributes comma_expression_opt RBRACKET
                                    { let (n, decl) = $1 in
@@ -1260,8 +1277,14 @@ function_def:  /* (* ISO 6.9.1 *) */
 
 function_def_start:  /* (* ISO 6.9.1 *) */
   decl_spec_list declarator   
-                            { announceFunctionName $2;
-                              (snd $1, fst $1, $2)
+                            {
+                              announceFunctionName $2;
+                              let (functionSpecificAttrs, nonFuncSpecificAttrs) = separateFunctionAttrsFromSpecifiers (fst $1) in
+                              if List.length functionSpecificAttrs = 0 then
+                                  (snd $1, fst $1, $2)
+                              else
+                                  let (n_name, n_type, n_attrlist, n_cabsloc) = $2 in
+                                  (snd $1, nonFuncSpecificAttrs, (n_name, PARENTYPE(functionSpecificAttrs, n_type, []), n_attrlist, n_cabsloc))
                             } 
 
 /* (* Old-style function prototype *) */
@@ -1338,6 +1361,8 @@ attribute_nocv:
 |   ATTRIBUTE_USED                      { ("__attribute__", 
                                              [ VARIABLE "used" ]), $1 }
 *)*/
+|   DOUBLE_LBRACKET attr_list_ne RBRACKET RBRACKET
+                                        {("__attribute__", $2), $1}
 |   DECLSPEC paren_attr_list_ne         { ("__declspec", $2), $1 }
 |   MSATTR                              { (fst $1, []), snd $1 }
                                         /* ISO 6.7.3 */
@@ -1365,6 +1390,8 @@ just_attribute:
     ATTRIBUTE LPAREN paren_attr_list RPAREN
                                         { ("__attribute__", $3) }
 |   DECLSPEC paren_attr_list_ne         { ("__declspec", $2) }
+|   DOUBLE_LBRACKET attr_list_ne RBRACKET RBRACKET
+                                        {("__attribute__", $2)}
 ;
 
 /* this can't be empty, b/c I folded that possibility into the calling
@@ -1380,16 +1407,6 @@ pragma:
 | PRAGMA attr SEMICOLON HASH_EOL	{ PRAGMA ($2, $1) }
 | PRAGMA_UNPARSED                           { PRAGMA (VARIABLE (fst $1), 
                                                   snd $1) }
-;
-
-/** (* DEFINEs... what are the semantic attributes of DEFINE_UNPARSED?
-       For PRAGMA_UNPARSED we have only $1, i.e. the PRAGMA_UNPARSED token
-       itself, which gets annotated with a pair (pragmaName ^ pragma lexbuf, here).
-       So fst $1 is the pragmaName plus the stuff that gets appended, and
-          snd $1 is the location.
-       Since DEFINE_UNPARSED gets a triple, we can't use fst/snd.... *) ***/
-define: 
-| DEFINE_UNPARSED { MACDEF ((let (f, _, _) = $1 in f), (let (_, s, _) = $1 in s), (let (_, _, t) = $1 in t)) }
 ;
 
 /* (* We want to allow certain strange things that occur in pragmas, so we 

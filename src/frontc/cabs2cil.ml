@@ -45,6 +45,7 @@ module E = Errormsg
 module H = Hashtbl
 module IH = Inthash
 module AL = Alpha
+module M = Machdep
 
 open Cabs
 open Cabshelper
@@ -761,6 +762,30 @@ end
 (* Const-fold any expressions that appear as array lengths in this type *)
 let constFoldType (t:typ) : typ =
   visitCilType constFoldTypeVisitor t
+
+(* Transform any expressions in an initializer. FIXME: we might prefer to
+ * use a visitor and visitCilInit, but that  *)
+let rec rewriteInitExprs (f: exp->exp) (i:init) : init =
+  match i with
+      SingleInit e -> SingleInit (f e)
+    | CompoundInit (t, oiList) -> CompoundInit (t,
+        List.map (fun (offs, i) -> (offs, rewriteInitExprs f i) ) oiList)
+
+(* Rewrite SizeOfE / AlignOfE to use the type of the expression only. This is
+ * useful when moving such expressions out of local binding contexts, e.g. when
+ * we turn a static local into a static global... an initializer referencing the
+ * size of alignment of a local will not work, but using its type works fine. *)
+let eliminateSizeOfAlignOfExpVisitor = object (self)
+  inherit nopCilVisitor
+  method vexpr e: exp visitAction =
+    match e with
+      SizeOfE e' -> ChangeTo (SizeOf (typeOf e'))
+    | AlignOfE e' -> ChangeTo (AlignOf (typeOf e'))
+    | _ -> DoChildren
+end
+let rec eliminateSizeOfAlignOfExpr (e:exp) : exp =
+    visitCilExpr eliminateSizeOfAlignOfExpVisitor e
+
 
 let typeSigNoAttrs: typ -> typsig = typeSigWithAttrs (fun _ -> [])
 
@@ -1571,9 +1596,20 @@ type combineWhat =
  * that are known to be equal *)
 let isomorphicStructs : (string * string, bool) H.t = H.create 15
 
-let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ = 
+let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
+  let combineAttributes olda a =
+          if what = CombineFunarg || what = CombineFunret then dropAttribute "const" (cabsAddAttributes olda a)
+     else cabsAddAttributes olda a
+  in
+  let combineAddAttributes olda a =
+     if what = CombineFunarg || what  = CombineFunret then dropAttribute "const" (addAttributes olda a)
+     else addAttributes olda a
+  in
+  let combineTypeAttributes olda a =
+     cabsTypeAddAttributes olda a
+  in
   match oldt, t with
-  | TVoid olda, TVoid a -> TVoid (cabsAddAttributes olda a)
+  | TVoid olda, TVoid a -> TVoid (combineAttributes olda a)
   | TInt (oldik, olda), TInt (ik, a) -> 
       let combineIK oldk k = 
         if oldk = k then oldk else
@@ -1585,7 +1621,7 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
         else
           raise (Failure "different integer types")
       in
-      TInt (combineIK oldik ik, cabsAddAttributes olda a)
+      TInt (combineIK oldik ik, combineAttributes olda a)
   | TFloat (oldfk, olda), TFloat (fk, a) -> 
       let combineFK oldk k = 
         if oldk = k then oldk else
@@ -1597,21 +1633,21 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
         else
           raise (Failure "different floating point types")
       in
-      TFloat (combineFK oldfk fk, cabsAddAttributes olda a)
+      TFloat (combineFK oldfk fk, combineAttributes olda a)
   | TEnum (_, olda), TEnum (ei, a) -> 
-      TEnum (ei, cabsAddAttributes olda a)
+      TEnum (ei, combineAttributes olda a)
         
         (* Strange one. But seems to be handled by GCC *)
   | TEnum (oldei, olda) , TInt(IInt, a) -> TEnum(oldei, 
-                                                 cabsAddAttributes olda a)
+                                                 combineAttributes olda a)
         (* Strange one. But seems to be handled by GCC *)
-  | TInt(IInt, olda), TEnum (ei, a) -> TEnum(ei, cabsAddAttributes olda a)
+  | TInt(IInt, olda), TEnum (ei, a) -> TEnum(ei, combineAttributes olda a)
         
         
   | TComp (oldci, olda) , TComp (ci, a) -> 
       if oldci.cstruct <> ci.cstruct then 
         raise (Failure "different struct/union types");
-      let comb_a = cabsAddAttributes olda a in
+      let comb_a = combineAttributes olda a in
       if oldci.cname = ci.cname then 
         TComp (oldci, comb_a)
       else 
@@ -1696,16 +1732,16 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
               raise (Failure "different array lengths")
            
       in
-      TArray (newbt, newsz, cabsAddAttributes olda a)
+      TArray (newbt, newsz, combineAttributes olda a)
         
   | TPtr (oldbt, olda), TPtr (bt, a) -> 
-      TPtr (combineTypes CombineOther oldbt bt, cabsAddAttributes olda a)
+      TPtr (combineTypes CombineOther oldbt bt, combineAttributes olda a)
         
   | TFun (_, _, _, [Attr("missingproto",_)]), TFun _ -> t
         
   | TFun (oldrt, oldargs, oldva, olda), TFun (rt, args, va, a) ->
       if oldva != va then 
-        raise (Failure "diferent vararg specifiers");
+        raise (Failure "different vararg specifiers");
       let defrt = combineTypes 
           (if what = CombineFundef then CombineFunret else CombineOther) 
           oldrt rt in
@@ -1742,7 +1778,7 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
                        CombineFunarg else CombineOther) 
                      ot' at
                  in
-                 let a = addAttributes oa aa in
+                 let a = combineAddAttributes oa aa in
                  (n, t, a))
                oldargslist argslist),
 	  (let oldrt' = !typeForCombinedArg map oldrt in
@@ -1752,23 +1788,23 @@ let rec combineTypes (what: combineWhat) (oldt: typ) (t: typ) : typ =
 	  !attrsForCombinedArg map olda
         end
       in
-      TFun (newrt, newargs, oldva, cabsAddAttributes olda' a)
+      TFun (newrt, newargs, oldva, combineAttributes olda' a)
         
   | TNamed (oldt, olda), TNamed (t, a) when oldt.tname = t.tname ->
-      TNamed (oldt, cabsAddAttributes olda a)
+      TNamed (oldt, combineAttributes olda a)
         
   | TBuiltin_va_list olda, TBuiltin_va_list a -> 
-      TBuiltin_va_list (cabsAddAttributes olda a)
+      TBuiltin_va_list (combineAttributes olda a)
 
         (* Unroll first the new type *)
   | _, TNamed (t, a) -> 
       let res = combineTypes what oldt t.ttype in
-      cabsTypeAddAttributes a res
+      combineTypeAttributes a res
         
         (* And unroll the old type as well if necessary *)
   | TNamed (oldt, a), _ -> 
       let res = combineTypes what oldt.ttype t in
-      cabsTypeAddAttributes a res
+      combineTypeAttributes a res
         
   | _ -> raise (Failure "different type constructors")
 
@@ -1828,9 +1864,8 @@ let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
      * or a new def with an old GVarDecl.
      * First, snapshot the incoming declaration -- whether or not it's
      * also a definition -- as a GVarDecl. FIXME: why not just as whatever it really is?  *)
-    oldvi.vvardecls <- (let glob = if isadef then (GVarDecl(oldvi, vi.vdecl)) else (GVarDecl(oldvi, vi.vdecl))
-        in let decl = { dstorage = vi.vstorage; dinline = vi.vinline; dattr = vi.vattr; }
-        in (glob, decl) :: oldvi.vvardecls);
+    oldvi.vvardecls <- (let decl = { dstorage = vi.vstorage; dinline = vi.vinline; dattr = vi.vattr; }
+        in (GVarDecl(oldvi, vi.vdecl), decl) :: oldvi.vvardecls);
     oldvi.vtype <- (try combineTypes
             (if isadef then CombineFundef else CombineOther) oldvi.vtype vi.vtype
           with Failure reason ->
@@ -2599,6 +2634,7 @@ let rec doSpecList (suggestedAnonName: string) (* This string will be part of
     | [A.Tint128] -> TInt(IInt128, [])
     | [A.Tuint128] -> TInt(IUInt128, [])
     | [A.Tsigned; A.Tint128] -> TInt(IInt128, [])
+    | [A.Tunsigned; A.Tint128] -> TInt(IUInt128, [])
     | [A.Tunsigned; A.Tint64] -> TInt(IUInt128, [])
 
     | [A.Tfloat] -> TFloat(FFloat, [])
@@ -4308,8 +4344,16 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
                                          * takes INTs as arguments  *)
             A.VARIABLE n -> begin
               try
+                (* NB: the type looked up here may be slightly inconsistent
+                 * with the type used in the function's implementation. This is
+                 * because `const` and `volatile` attributes can exist in
+                 * prototypes but be missing in a function's implementation
+                 * (see C++03 13.1-3). That means that our output can be
+                 * inconsistent with the original source: we might introduce
+                 * casting to `const` or `volatile` that a function's
+                 * implementation doesn't expect. *)
                 let vi, _ = lookupVar n in
-                (empty, Lval(var vi), vi.vtype) (* Found. Do not use 
+                (empty, Lval(var vi), vi.vtype) (* Found. Do not use
                                                  * finishExp. Simulate what = 
                                                  * AExp None  *)
               with Not_found -> begin
@@ -4473,6 +4517,27 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
         (* Try to intercept some builtins *)
         (match !pf with 
           Lval(Var fv, NoOffset) -> begin
+            if fv.vname = "__builtin_convertvector" then
+              begin
+                match !pargs with
+                  | [ e; SizeOf t] -> begin
+                    resType' := t;
+                    let vecSize (v: typ) =
+                      match unrollType v with
+                      | TInt(_, attrs) | TFloat(_, attrs) -> begin
+                        match List.find_opt (fun (Attr(an', _)) -> an' = "__vector_size__" || an' = "vector_size") attrs with
+                        | Some(Attr(_, [AInt sz])) -> Some sz
+                        | _ -> None
+                      end
+                      | _ -> None
+                    in
+                      match vecSize (typeOf e), vecSize t with
+                      | Some sz1, Some sz2 -> if sz1 <> sz2 then
+                          ignore (warn "Incompatible vector sizes in call to builtin_convertvector")
+                      | _ -> ignore (warn "Invalid types in call to builtin_convertvector")
+                  end
+                  | _ -> ignore (warn "Invalid call to builtin_convertvector");
+              end
             (* Most atomic builtins are overloaded: check the type of the
                first argument and fix the return type accordingly for those
                annotated with "overloaded" in src/cil.ml.
@@ -4482,7 +4547,7 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
                http://gcc.gnu.org/onlinedocs/gcc/_005f_005fsync-Builtins.html#g_t_005f_005fsync-Builtins
                http://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html
              *)
-            if !resType' = TVoid[Attr("overloaded",[])] then begin
+            else if !resType' = TVoid[Attr("overloaded",[])] then begin
               match !pargs  with
                 ptr :: _ -> begin match typeOf ptr with
                 TPtr (vtype, _) ->
@@ -4568,8 +4633,8 @@ and doExp (asconst: bool)   (* This expression is used as a constant *)
             end
              
             (* More weird buitins *)
-            else if fv.vname = "__builtin_object_size" then begin
-              (* Side-effects make __builtin_object_size return -1 or 0 *)
+            else if fv.vname = "__builtin_object_size" || fv.vname = "__builtin_dynamic_object_size" then begin
+              (* Side-effects make __builtin_object_size/__builtin_dynamic_object_size return -1 or 0 *)
               if (not (isEmpty (!prechunk ()))) then
               (match !pargs with
                 [ ptr; typ ] -> begin
@@ -5192,7 +5257,7 @@ and doInitializer
   if debugInit then
     ignore (E.log "Finished the initializer for %s\n  init=%a\n  typ=%a\n  acc=%a\n" 
            vi.vname d_init init d_type typ' d_chunk acc);
-  acc, init, typ''
+  acc, rewriteInitExprs eliminateSizeOfAlignOfExpr init, typ''
 
 
   
@@ -5953,10 +6018,6 @@ and doDecl (isglobal: bool) : A.definition -> chunk = function
           cabsPushGlobal (GPragma (a'', !currentLoc));
           empty
       | _ -> E.s (error "Too many attributes in pragma")
-  end
-  | A.MACDEF (a1, a2, loc) when isglobal -> begin
-      (* output_string Pervasives.stderr ("Saw a macro: " ^ a1 ^ " defined as " ^ a2 ^ "\n");*)
-      empty
   end
   | A.TRANSFORMER (_, _, _) -> E.s (E.bug "TRANSFORMER in cabs2cil input")
   | A.EXPRTRANSFORMER (_, _, _) -> 
@@ -6924,10 +6985,80 @@ end
 
 let stripParenFile file = V.visitCabsFile (new stripParenClass) file
 
+(* While lexing, we build up on the side a list of the macro definitions
+ * that the preprocessor left in place (e.g. if run with -dMD). Here we
+ * check for any disagreements with the machine spec. Morally this list
+ * is part of the Cabs, although it exists outside the AST.
+ *
+ * One quick way to test this: configure with GCC, run cilly with
+ * CILLY_NATIVE_CC=clang-18, pass args -Xpreprocessor -dD and check that a
+ * warning is generated (clang emulates GNU C 4.2.1 at least up to version 18). *)
+let checkMachineSpecAgainstMacros () =
+    List.iter (fun (a1, a2, loc) ->
+      if loc.filename = "<built-in>" then
+            let warnIf cond msg =
+                if cond then output_string Pervasives.stderr ("Warning: " ^
+                    "machine mismatch: " ^ msg ^ "\n") else ()
+            in
+            let readInt (s:string) = try int_of_string (String.trim s)
+                with Failure _ -> (output_string Pervasives.stderr ("Not an int: " ^ s ^ "\n"); 0)
+            in
+            (* ("Saw a built-in macro: " ^ a1 ^ " defined as " ^ a2 ^ "\n") *)
+            match a1 with
+                (* which macros do we know about that can define a part of a machine? *)
+                "__GNUC__" (* e.g. "10" *) -> let seenMacroVer = readInt a2 in
+                    (* FIXME: we should really combine the major, minor and patchlevel
+                     * as documented, to get our value to compare against assumedVer *)
+                    let assumedVer = !gnucDialectVersion / 100 in
+                    warnIf (assumedVer > seenMacroVer)
+                    ("CIL is assuming a later GNU C dialect version (" ^
+                    (string_of_int assumedVer)
+                    ^ ", compared to macro __GNUC__ seen defined as " ^ a2 ^ ")")
+                | "__GNUC_MINOR__" (* e.g. "2" *) -> ()
+                | "__GNUC_PATCHLEVEL__" (* e.g. "1" *) -> ()
+                | "__SIZEOF_INT__" (* e.g. "4" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_int) "sizeof (int) mismatch"
+                | "__SIZEOF_LONG__" (* e.g. "8" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_long) "sizeof (long) mismatch"
+                | "__SIZEOF_LONG_LONG__" (* e.g. "8" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_longlong) "sizeof (long long) mismatch"
+                | "__SIZEOF_SHORT__" (* e.g. "2" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_short) "sizeof (short) mismatch"
+                | "__SIZEOF_FLOAT__" (* e.g. "4" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_float) "sizeof (float) mismatch"
+                | "__SIZEOF_DOUBLE__" (* e.g. "8" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_double) "sizeof (double) mismatch"
+                | "__SIZEOF_LONG_DOUBLE__" (* e.g. "16" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_longdouble) "sizeof (double) mismatch"
+                (*| "__SIZEOF_SIZE_T__" (* e.g. "8" *) ->*)
+                | "__SIZEOF_POINTER__" (* e.g. "8" *) -> warnIf (readInt a2 <> !Machdep.theMachine.sizeof_ptr) "sizeof (double) mismatch"
+                (*| "__SIZE_TYPE__" (* e.g. "long unsigned int" *) ->*)
+                (*| "__PTRDIFF_TYPE__" (* e.g. "long int" *) ->*)
+                | "__WCHAR_TYPE__" (* e.g. "int" *) -> warnIf (String.trim a2 <> !Machdep.theMachine.wchar_t) "wchar_t mismatch"
+                (*| "__INTMAX_TYPE__" (* e.g. "long int" *) ->*)
+                (*| "__UINTMAX_TYPE__" (* e.g. "long unsigned int" *) ->*)
+                (*| "__SIZEOF_INT128__" (* e.g. "16" *) ->*)
+                (*| "__SIZEOF_WCHAR_T__" (* e.g. "4" *) ->*)
+                (*| "__SIZEOF_WINT_T__" (* e.g. "4" *) ->*)
+                (*| "__SIZEOF_PTRDIFF_T__" (* e.g. "8" *) ->*)
+                (*| "__SIZEOF_FLOAT80__" (* e.g. "16" *) ->*)
+                | "__SIZEOF_FLOAT128__" (* e.g. "16" *) -> warnIf (0 = !Machdep.theMachine.alignof_float128) "_Float128 mismatch"
+                (*
+                    What to do about the float stuff? We need to detect whether
+                    the various floatx types are builtins.
+                    And we need to know it ages ago, i.e. during lexing!
+                    Or do we? Are we still lexing the remainder of the file?
+                    I just notice that our warning messages here appear *before*
+                    the problem. Oh, no... we are too late right now. We would have
+                    to scrape all the #defines before we know how to lex the file.
+                    Is there another way around this?
+                    Quickest fix: extend the machdep to include the GNU C dialect version
+                    (or just a dialect version number), then create a special env machine
+                    for clang.
+                    Right fix: pre-lex? Or do the processing here at the time of lexing.
+                 *)
+              | _ -> ()
+      else ()
+   ) !Clexer.macDefs
 
 (* Translate a file *)
 let convFile (f : A.file) : Cil.file =
   Cil.initCIL (); (* make sure we have initialized CIL *)
+
+  checkMachineSpecAgainstMacros (); (* warn if we've seen macros that disagree with machine spec *)
 
   (* remove parentheses from the Cabs *)
   let fname,dl = stripParenFile f in 
