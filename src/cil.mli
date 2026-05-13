@@ -503,8 +503,7 @@ and varinfo = {
     mutable vstorage: storage;
     (** The storage-class *)
 
-    (** All GVarDecls, GVars and GFuns that share this varinfo, if it's global *)
-    mutable vvardecls : (global * declinfo) list;
+    mutable vvardecls : (global * declinfo) list; (** All GVarDecls, GVars and GFuns that share this varinfo, if it's global *)
 
     mutable vglob: bool;	        
     (** True if this is a global variable*)

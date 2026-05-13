@@ -435,7 +435,7 @@ and declinfo = {
     mutable dinline: bool;
     mutable dattr: attributes;
 }
-(** Information about a variable. These structures are shared by all 
+(* Information about a variable. These structures are shared by all 
  * references to the variable. So, you can change the name easily, for 
  * example. Use one of the {!Cil.makeLocalVar}, {!Cil.makeTempVar} or 
  * {!Cil.makeGlobalVar} to create instances of this data structure. *)
@@ -450,8 +450,7 @@ and varinfo = {
     (* The other fields are not used in varinfo when they appear in the formal
        argument list in a [TFun] type *)
 
-    (** All globals that share this varinfo, if it's global *)
-    mutable vvardecls : (global * declinfo) list;
+    mutable vvardecls : (global * declinfo) list; (** All globals that share this varinfo, if it's global *)
 
     mutable vglob: bool;	        (** True if this is a global variable*)
 
@@ -4380,13 +4379,13 @@ class defaultCilPrinterClass : cilPrinter = object (self)
              * refactoring that split would avoid the need for this
              * hack. Anyway, here for now I remove gnu_inline from
              * *both* the function and its type. *)
-            List.fold_left (fun acc -> fun (glob, storage, inl) ->
+            List.fold_left (fun acc -> fun (glob, decl) ->
                      let oldinl, oldsto, oldattr, oldtattrs = (fundec.svar.vinline, fundec.svar.vstorage, fundec.svar.vattr, typeAttrs fundec.svar.vtype) in
-                     (fundec.svar.vinline <- inl;
-                     fundec.svar.vstorage <- storage;
-                     fundec.svar.vattr <- if inl then oldattr
+                     (fundec.svar.vinline <- decl.dinline;
+                     fundec.svar.vstorage <- decl.dstorage;
+                     fundec.svar.vattr <- if decl.dinline then oldattr
                         else dropAttribute "gnu_inline" oldattr;
-                     fundec.svar.vtype <- if inl then fundec.svar.vtype
+                     fundec.svar.vtype <- if decl.dinline then fundec.svar.vtype
                         else setTypeAttrs fundec.svar.vtype (dropAttribute "gnu_inline" oldtattrs);
                      let res = acc ++ (self#pVDecl () fundec.svar)
                         ++ (text "; /* inline: extra prototype dump */") ++ line
@@ -4400,11 +4399,11 @@ class defaultCilPrinterClass : cilPrinter = object (self)
                  (text "")
                  fundec.svar.vvardecls
             else nil in
-         fprint out !lineLength
+         fprint out ~width:!lineLength
            (maybeExtraProtos ++ (self#pLineDirective ~forcefile:true l));
          (* Temporarily remove the function attributes *)
          fundec.svar.vattr <- [];
-         fprint out !lineLength (self#pFunDecl () fundec);
+         fprint out ~width:!lineLength (self#pFunDecl () fundec);
          fundec.svar.vattr <- oldattr;
          output_string out "\n"
 
