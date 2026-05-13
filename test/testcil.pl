@@ -693,6 +693,7 @@ addTest("scott/enumattr");
 addTest("runall/alpha");
 addTest("testrun/blockattr2 USECFG=1");
 addTest("testrun/extinline2");
+addTest("testrun/extinline2a");
 addTest("test/extinline3");
 addTest("testrun/bool");
 addTest("testrun/var_named_hidden");
