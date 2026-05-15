@@ -2131,7 +2131,11 @@ let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
                 in
                 cabsAddAttributes oldAttrsMaybeWithoutSection vi.vattr
                 );
-    oldvi.vstorage <- begin match oldvi.vstorage, vi.vstorage with
+    oldvi.vstorage <-
+      if isadef then
+        vi.vstorage
+      else
+      begin match oldvi.vstorage, vi.vstorage with
             (* Extern and something else is that thing. FIXME: WHY? That's not
              * what 6.2.2 says.
              * For "extern inline", it's essential that we remember when we've
@@ -2156,8 +2160,8 @@ let makeGlobalVarinfo (isadef: bool) (vi: varinfo) : varinfo * bool =
                       "Inconsistent storage specification for %s. Previous declaration: %a"
                       vi.vname d_loc oldloc)
                  );
-                 vi.vstorage
-                 )
+                  vi.vstorage
+                  )
         end;
     oldvi.vinline <-
         (* If we're dealing with a non-inline definition of a function previously seen
