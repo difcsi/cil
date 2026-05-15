@@ -1,4 +1,4 @@
-(*
+ (*
 
    Copyright (c) 2001-2003,
     George C. Necula    <necula@cs.berkeley.edu>
@@ -333,6 +333,16 @@ let options : (string * Arg.spec * string) list =
     Arg.Clear Cil.useCaseRange,
      (" Transform case ranges to sequence of cases" ^
        is_default (not !Cil.useCaseRange));
+
+    "--oldStyleExternInline",
+    Arg.Set Cil.oldstyleExternInline,
+    (" Full definitions replace extern inline ones only for later calls" ^
+       is_default !Cil.oldstyleExternInline);
+
+    "--noOldStyleExternInline",
+    Arg.Clear Cil.oldstyleExternInline,
+     (" Full definitions completely replace extern inline ones" ^
+       is_default (not !Cil.oldstyleExternInline));
 
     "--keepunused",
     Arg.Set RmUnused.keepUnused,

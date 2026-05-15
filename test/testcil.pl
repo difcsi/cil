@@ -693,7 +693,9 @@ addTest("scott/enumattr");
 addTest("runall/alpha");
 addTest("testrun/blockattr2 USECFG=1");
 addTest("testrun/extinline2");
+addTest("testrun/extinline2a");
 addTest("test/extinline3");
+addTest("test/extinline4");
 addTest("testrun/bool");
 addTest("testrun/var_named_hidden");
 addTest("testrun/macro_hidden");
@@ -706,6 +708,12 @@ addTest("testrun/large_unsigned_long");
 
 addTest("test/shell-escape SHELL_ESCAPE=1");
 addTest("testpipe/simple");
+
+
+addTest("testrun/inline4-gnu89 $gcc OPTIMIZE=1 EXTRAARGS=-O2");
+addTest("testrun/inline4-c11 $gcc OPTIMIZE=1 EXTRAARGS=-O2");
+addTest("testrun/inline4-c11+oldinline $gcc OPTIMIZE=1 EXTRAARGS=-O2");
+
 
 # c99 readiness tests
 addTest("testrunc99/c99-bool");
