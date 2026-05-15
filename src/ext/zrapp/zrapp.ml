@@ -297,8 +297,8 @@ class zraCilPrinterClass : cilPrinter = object (self)
 	   text v.vname)
 
  (* variable declaration *)
-  method! pVDecl () (v:varinfo) =
-    (* See if the name is already in the environment with a
+  method! pVDecl ?(beginsFunDef = false) () (v:varinfo) =
+    (* See if the name is already in the environment with a 
        different varinfo. If so, give a warning.
        If not, add the name to the environment *)
     let _ = if (H.mem lenvHtbl v.vname) && not(self#checkVi v) then
@@ -578,7 +578,7 @@ class zraCilPrinterClass : cilPrinter = object (self)
       else f in
     let decls = docList ~sep:line (fun vi -> self#pVDecl () vi ++ text ";")
 	() nf.slocals in
-    self#pVDecl () nf.svar
+    self#pVDecl ~beginsFunDef:true () nf.svar
       ++  line
       ++ text "{ "
       ++ (align

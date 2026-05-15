@@ -427,22 +427,30 @@ and typeinfo = {
     (** True if used. Initially set to false*)
 }
 
-
-(** Information about a variable. These structures are shared by all
-   references to the variable. So, you can change the name easily, for
-   example. Use one of the {!makeLocalVar}, {!makeTempVar} or
-   {!makeGlobalVar} to create instances of this data structure. *)
-and varinfo = {
-    mutable vname: string;		(** The name of the variable. Cannot
-                                            be empty. *)
-    mutable vtype: typ;                 (** The declared type of the
-                                            variable. *)
-    mutable vattr: attributes;          (** A list of attributes associated
-                                            with the variable. *)
+(** Information about a variable or function declaration. This exists
+  because different declarations of the same function or variable
+  might use different attributes, storage or 'inline' modifiers. *)
+and declinfo = {
+    mutable dstorage: storage;
+    mutable dinline: bool;
+    mutable dattr: attributes;
+}
+(** Information about a variable. These structures are shared by all 
+ references to the variable. So, you can change the name easily, for 
+ example. Use one of the {!makeLocalVar}, {!makeTempVar} or 
+ {!makeGlobalVar} to create instances of this data structure. *)
+and varinfo = { 
+    mutable vname: string;		(** The name of the variable. Cannot 
+                                          be empty. *)
+    mutable vtype: typ;                 (** The declared type of the 
+                                          variable. *)
+    mutable vattr: attributes;          (** A list of attributes associated 
+                                          with the variable. *)
     mutable vstorage: storage;          (** The storage-class *)
     (* The other fields are not used in varinfo when they appear in the formal
        argument list in a [TFun] type *)
 
+    mutable vvardecls : (global * declinfo) list; (** All globals that share this varinfo, if it's global *)
 
     mutable vglob: bool;	        (** True if this is a global variable*)
 
@@ -3380,11 +3388,11 @@ class type cilPrinter = object
   method setPrintInstrTerminator : string -> unit
   method getPrintInstrTerminator : unit -> string
 
-  method pVDecl: unit -> varinfo -> doc
-    (** Invoked for each variable declaration. Note that variable
-       declarations are all the [GVar], [GVarDecl], [GFun], all the [varinfo]
-       in formals of function types, and the formals and locals for function
-       definitions. *)
+  method pVDecl: ?beginsFunDef:bool -> unit -> varinfo -> doc
+    (** Invoked for each variable declaration. Note that variable 
+     * declarations are all the [GVar], [GVarDecl], [GFun], all the [varinfo] 
+     * in formals of function types, and the formals and locals for function 
+     * definitions. *)
 
   method pVar: varinfo -> doc
     (** Invoked on each variable use. *)
@@ -3486,15 +3494,30 @@ class defaultCilPrinterClass : cilPrinter = object (self)
   (* variable use *)
   method pVar (v:varinfo) = text v.vname
 
-  (* variable declaration *)
-  method pVDecl () (v:varinfo) =
+  (* variable declaration
+   * The caller tells us if we're being repurposed as part of
+   * printing the first line of a function *definition*, because
+   * 'inline' needs special handling. *)
+  method pVDecl ?(beginsFunDef = false) () (v:varinfo) =
     let stom, rest = separateStorageModifiers v.vattr in
     (* First the storage modifiers *)
+    (* If we're printing a function definition, we handle inlines specially.
+     * Getting this right is a bit hairy. *)
     text (if v.vinline then "__inline " else "")
-      ++ d_storage () v.vstorage
+      (* Suppress extern on a function definition if it's not inline.
+         Suppress extern on a function prototype if it's *consistently* been declared extern. *)
+      ++ (let suppressExtern = (* (beginsFunDef && not v.vinline) || (not beginsFunDef) *) false
+         in if v.vstorage = Extern && suppressExtern then text " " else  d_storage () v.vstorage)
       ++ (self#pAttrs () stom)
       ++ (self#pType (Some (text v.vname)) () v.vtype)
-      ++ text " "
+      ++ text (
+          if beginsFunDef
+          then (" /* comes from pVDecl with beginsFunDef; vinline is really "
+            ^ (if v.vinline then "true" else "false")
+            ^ " and the varinfo, magic " ^ (string_of_int (Obj.magic v))
+            ^ ", also has " ^ (string_of_int (List.length v.vvardecls))^ " entries in vvardecls */ ")
+          else " " (* DON'T try to output /* */ comments here -- CIL *)
+         )         (* sometimes wraps this case in '/* */' itself.   *)
       ++ self#pAttrs () rest
 
   (*** L-VALUES ***)
@@ -4164,22 +4187,47 @@ class defaultCilPrinterClass : cilPrinter = object (self)
   method pGlobal () (g:global) : doc =       (* global (vars, types, etc.) *)
     match g with
     | GFun (fundec, l) ->
-        (* If the function has attributes then print a prototype because
-          GCC cannot accept function attributes in a definition *)
+        (* If the function has attributes then print a prototype because 
+         GCC cannot accept function attributes in a definition. Also,
+         * for inline functions, always print a prototype because this
+         * affects their linkage semantics (C11 section 6.7.4). *)
         let oldattr = fundec.svar.vattr in
         (* Always print the file name before function declarations *)
-        let proto =
-          if oldattr <> [] then
+        let maybeExtraProtos =
+          (* We always print a prototype for funs with attrs,
+           * and for definitions of extern inlines.
+           * For a function declared inline anywhere, we prototype *all* of the
+           * declaration cases found in its vvardecls. *)
+          let declaredInline = List.fold_left (fun acc -> fun (_, decl) -> acc || decl.dinline) false
+                 fundec.svar.vvardecls
+          in
+          if oldattr <> [] && not declaredInline then
             (self#pLineDirective l) ++ (self#pVDecl () fundec.svar)
-              ++ chr ';' ++ line
-          else nil in
-        (* Temporarily remove the function attributes *)
+              ++ chr ';' ++ text "/* comes from extra-prototyping a GFun */" ++ line
+          else if declaredInline then
+            List.fold_left (fun acc -> fun (glob, decl) ->
+                     let (oldinl, oldsto) = (fundec.svar.vinline, fundec.svar.vstorage)
+                     in
+                     (fundec.svar.vinline <- decl.dinline;
+                     fundec.svar.vstorage <- decl.dstorage;
+                     let res = acc ++ (self#pVDecl () fundec.svar) ++ (text "; /* extra prototype for inline */") ++ line
+                     in
+                     fundec.svar.vinline <- oldinl;
+                     fundec.svar.vstorage <- oldsto;
+                     res)
+                 )
+                 (text "")
+                 fundec.svar.vvardecls
+          else nil (* empty string *)
+          in
+        (* Temporarily remove the function attributes to print the body.
+         * Note that 'pFunDecl' prints the body, not the prototype. *)
         fundec.svar.vattr <- [];
         let body = (self#pLineDirective ~forcefile:true l)
                       ++ (self#pFunDecl () fundec) in
         fundec.svar.vattr <- oldattr;
-        proto ++ body ++ line
-
+        maybeExtraProtos ++ body ++ line
+          
     | GType (typ, l) ->
         self#pLineDirective ~forcefile:true l ++
           text "typedef "
@@ -4258,7 +4306,8 @@ class defaultCilPrinterClass : cilPrinter = object (self)
         end else
           self#pLineDirective l ++
             (self#pVDecl () vi)
-            ++ text ";\n"
+            ++ text ("; /* comes from a real GVarDecl in the globals list; the varinfo, magic " ^ (string_of_int (Obj.magic vi))
+        ^ ", also has " ^ (string_of_int (List.length vi.vvardecls)) ^ " entries in vvardecls */ \n")
 
     | GAsm (s, l) ->
         self#pLineDirective l ++
@@ -4299,25 +4348,63 @@ class defaultCilPrinterClass : cilPrinter = object (self)
           nil
 
 
-   method dGlobal (out: out_channel) (g: global) : unit =
-     (* For all except functions and variable with initializers, use the
-        pGlobal *)
-     match g with
-       GFun (fdec, l) ->
-         (* If the function has attributes then print a prototype because
-            GCC cannot accept function attributes in a definition *)
-         let oldattr = fdec.svar.vattr in
-         let proto =
-           if oldattr <> [] then
-             (self#pLineDirective l) ++ (self#pVDecl () fdec.svar)
-               ++ chr ';' ++ line
-           else nil in
+   method dGlobal (out: out_channel) (g: global) : unit = 
+     (* For all except functions and variable with initializers, use the 
+      * pGlobal *)
+     match g with 
+       GFun (fundec, l) ->
+         (* If the function has attributes then print a prototype because 
+          * GCC cannot accept function attributes in a definition *)
+         let oldattr = fundec.svar.vattr in
+         let maybeExtraProtos =
+           let declaredInline = List.fold_left (fun acc -> fun (_, decl) -> acc || decl.dinline) false
+                 fundec.svar.vvardecls
+           in
+           if oldattr <> [] && not declaredInline then
+             (self#pLineDirective l) ++ (self#pVDecl () fundec.svar)
+               ++ text"; /* comes from extra-prototyping a GFun in dGlobal */" ++ line
+           else if declaredInline then
+            (* Dump all the GVarDecls we saw for this function,
+             * by printing the *actual* fundec's prototype but
+             * with the 'inl' and 'storage' that the vardecl
+             * came with. Extra quirk: if we're not declaring
+             * it inline, also strip the gnu_inline attribute,
+             * to silence some GCC warnings.
+             * XXX: for reasons that make no sense to me, attributes
+             * like "gnu_inline" and many others are added to the
+             * function's type. See 'AttrFunType' in attributeClass.
+             * Many of these, from what I can see, are actually
+             * attributes which go on a *named function* but have
+             * nothing to do with its type. It's possible that
+             * refactoring that split would avoid the need for this
+             * hack. Anyway, here for now I remove gnu_inline from
+             * *both* the function and its type. *)
+            List.fold_left (fun acc -> fun (glob, decl) ->
+                     let oldinl, oldsto, oldattr, oldtattrs = (fundec.svar.vinline, fundec.svar.vstorage, fundec.svar.vattr, typeAttrs fundec.svar.vtype) in
+                     (fundec.svar.vinline <- decl.dinline;
+                     fundec.svar.vstorage <- decl.dstorage;
+                     fundec.svar.vattr <- if decl.dinline then oldattr
+                        else dropAttribute "gnu_inline" oldattr;
+                     fundec.svar.vtype <- if decl.dinline then fundec.svar.vtype
+                        else setTypeAttrs fundec.svar.vtype (dropAttribute "gnu_inline" oldtattrs);
+                     let res = acc ++ (self#pVDecl () fundec.svar)
+                        ++ (text "; /* inline: extra prototype dump */") ++ line
+                     in
+                     fundec.svar.vinline <- oldinl;
+                     fundec.svar.vstorage <- oldsto;
+                     fundec.svar.vattr <- oldattr;
+                     fundec.svar.vtype <- setTypeAttrs fundec.svar.vtype oldtattrs;
+                     res)
+                 )
+                 (text "")
+                 fundec.svar.vvardecls
+            else nil in
          fprint out ~width:!lineLength
-           (proto ++ (self#pLineDirective ~forcefile:true l));
+           (maybeExtraProtos ++ (self#pLineDirective ~forcefile:true l));
          (* Temporarily remove the function attributes *)
-         fdec.svar.vattr <- [];
-         fprint out ~width:!lineLength (self#pFunDecl () fdec);
-         fdec.svar.vattr <- oldattr;
+         fundec.svar.vattr <- [];
+         fprint out ~width:!lineLength (self#pFunDecl () fundec);
+         fundec.svar.vattr <- oldattr;
          output_string out "\n"
 
      | GVar (vi, {init = Some i}, l) -> begin
@@ -4351,7 +4438,7 @@ class defaultCilPrinterClass : cilPrinter = object (self)
        ++ text ";"
 
   method private pFunDecl () f =
-      self#pVDecl () f.svar
+      self#pVDecl ~beginsFunDef:true () f.svar
       ++  line
       ++ text "{ "
       ++ (align
@@ -4359,8 +4446,8 @@ class defaultCilPrinterClass : cilPrinter = object (self)
             ++ line
             ++ (docList ~sep:line
                 (fun vi -> match vi.vinit.init with
-                | None -> self#pVDecl () vi ++ text ";"
-                | Some i -> self#pVDecl () vi ++ text " = " ++
+                | None -> self#pVDecl ~beginsFunDef:false () vi ++ text ";"
+                | Some i -> self#pVDecl ~beginsFunDef:false () vi ++ text " = " ++
                     self#pInit () i ++ text ";")
                 () (List.filter (fun v -> not v.vhasdeclinstruction) f.slocals))
             ++ line ++ line
@@ -5076,6 +5163,7 @@ let makeVarinfo global name ?init typ =
       vdecl = lu;
       vinit = {init=init};
       vinline = false;
+      vvardecls = [];
       vattr = [];
       vstorage = NoStorage;
       vaddrof = false;
