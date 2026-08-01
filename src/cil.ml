@@ -3153,6 +3153,15 @@ let initGccBuiltins () : unit =
   H.add h "__builtin_add_overflow" (boolType, [ (*longType; longType; longType*) ], true);
   H.add h "__builtin_sub_overflow" (boolType, [ (*longType; longType; longType*) ], true);
 
+  (* ... and the type-specific members of the same family.*)
+  List.iter (fun n -> H.add h n (boolType, [], true)) [
+    "__builtin_sadd_overflow";  "__builtin_saddl_overflow";  "__builtin_saddll_overflow";
+    "__builtin_uadd_overflow";  "__builtin_uaddl_overflow";  "__builtin_uaddll_overflow";
+    "__builtin_ssub_overflow";  "__builtin_ssubl_overflow";  "__builtin_ssubll_overflow";
+    "__builtin_usub_overflow";  "__builtin_usubl_overflow";  "__builtin_usubll_overflow";
+    "__builtin_smul_overflow";  "__builtin_smull_overflow";  "__builtin_smulll_overflow";
+    "__builtin_umul_overflow";  "__builtin_umull_overflow";  "__builtin_umulll_overflow" ];
+
   H.add h "__builtin_nan" (doubleType, [ charConstPtrType ], false);
   H.add h "__builtin_nanf" (floatType, [ charConstPtrType ], false);
   H.add h "__builtin_nanl" (longDoubleType, [ charConstPtrType ], false);
